@@ -75,6 +75,7 @@ assert_tool_call() {
   fi
 }
 
+# Wir prüfen exec-Ergebnisse direkt im Session-Log, weil Tool-Outputs gelegentlich vom Modell leicht paraphrasiert werden.
 assert_exec_result() {
   local agent_id="$1"
   local command_substring="$2"
