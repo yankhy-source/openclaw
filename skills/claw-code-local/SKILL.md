@@ -1,6 +1,6 @@
 ---
 name: claw-code-local
-description: "Use the local claw-code installation that is wired to the sibling claw-code-parity checkout. Use when: (1) you need claw-code version or summary output, (2) you need to inspect or operate on the local claw-code-parity workspace, (3) you need a stable local command path for claw-code from OpenClaw. NOT for: generic GitHub tasks (use github), generic coding delegation (use coding-agent), or questions that can be answered by reading files directly."
+description: "Use the local claw-code installation that is wired to the sibling claw-code-parity checkout. Use when: (1) you need claw-code version or status output, (2) you need to inspect or operate on the local claw-code-parity workspace, (3) you need a stable local command path for claw-code from OpenClaw. NOT for: generic GitHub tasks (use github), generic coding delegation (use coding-agent), or questions that can be answered by reading files directly."
 metadata:
   {
     "openclaw":
@@ -29,20 +29,21 @@ Use this skill when the task explicitly involves:
 - OpenClaw wrapper path: `scripts/dev/claw-code-local`
 - Parity repo root: `../claw-code-parity`
 - Parity repo wrapper: `../claw-code-parity/scripts/claw-code`
-- Rust binary (preferred when present): `../claw-code-parity/rust/target/release/claw`
+- Rust binary used by the parity wrapper when present: `../claw-code-parity/rust/target/release/claw`
 
 ## Fast Checks
 
 ```bash
 claw-code-local --version
-claw-code-local summary
+claw-code-local status
 ```
 
 ## Behavior
 
 - Prefer `claw-code-local` over guessing where the parity repo lives.
-- The wrapper automatically prefers the Rust binary when it exists.
+- The local wrapper delegates to the parity repo launcher first; that launcher uses the Rust binary when it exists.
 - If the Rust binary is missing, it falls back to the parity repo launcher.
+- `claw-code-local summary` is not a stable non-interactive probe in the current Rust CLI; use `status` or `version` instead.
 - If you need more context, read files in `../claw-code-parity` directly.
 
 ## Typical Uses
@@ -53,10 +54,10 @@ claw-code-local summary
 claw-code-local --version
 ```
 
-### Summarize the local parity workspace
+### Check the current local workspace status
 
 ```bash
-claw-code-local summary
+claw-code-local status
 ```
 
 ### Work against the parity repository explicitly

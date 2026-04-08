@@ -58,6 +58,10 @@ The selftest script already checks `OPENCLAW_SELFTEST_NODE_BIN` and otherwise
 falls back to `$HOME/.node22/current/bin`. Keep that override only when your
 login shell resolves `openclaw` through an older Node runtime.
 
+For non-interactive `claw-code` health checks, use `claw-code-local --version`
+or `claw-code-local status`. The current Rust CLI treats `summary` as a slash
+command, so `claw-code-local summary` is not a stable probe.
+
 ## What the Selftest Verifies
 
 - `claw-code` wrapper invocation through the `claw-code` agent
