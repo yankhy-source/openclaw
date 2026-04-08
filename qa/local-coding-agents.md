@@ -50,11 +50,13 @@ pnpm qa:local-agents:bootstrap
 Run the full end-to-end selftest:
 
 ```bash
-PATH=/Users/yo.brain/.node22/current/bin:$PATH pnpm qa:local-agents:selftest
+PATH="${OPENCLAW_SELFTEST_NODE_BIN:-$HOME/.node22/current/bin}:$PATH" \
+pnpm qa:local-agents:selftest
 ```
 
-The explicit Node path is required on this machine because the installed `openclaw`
-CLI rejects the older default Node runtime in the login shell.
+The selftest script already checks `OPENCLAW_SELFTEST_NODE_BIN` and otherwise
+falls back to `$HOME/.node22/current/bin`. Keep that override only when your
+login shell resolves `openclaw` through an older Node runtime.
 
 ## What the Selftest Verifies
 
@@ -70,7 +72,7 @@ CLI rejects the older default Node runtime in the login shell.
 Read repo data through the builder agent:
 
 ```bash
-PATH=/Users/yo.brain/.node22/current/bin:$PATH \
+PATH="${OPENCLAW_SELFTEST_NODE_BIN:-$HOME/.node22/current/bin}:$PATH" \
 openclaw agent --agent oc-builder \
   --message "Nutze read, lies package.json und antworte mit dem lokalen Agent-Selftest-Scriptnamen." \
   --json
@@ -79,7 +81,7 @@ openclaw agent --agent oc-builder \
 Run GitHub repo inspection:
 
 ```bash
-PATH=/Users/yo.brain/.node22/current/bin:$PATH \
+PATH="${OPENCLAW_SELFTEST_NODE_BIN:-$HOME/.node22/current/bin}:$PATH" \
 openclaw agent --agent oc-github \
   --message "Nutze exec und führe 'gh repo view yankhy-source/claw-code-parity --json nameWithOwner,isFork,url' aus." \
   --json
@@ -88,7 +90,7 @@ openclaw agent --agent oc-github \
 Run local `claw-code`:
 
 ```bash
-PATH=/Users/yo.brain/.node22/current/bin:$PATH \
+PATH="${OPENCLAW_SELFTEST_NODE_BIN:-$HOME/.node22/current/bin}:$PATH" \
 openclaw agent --agent claw-code \
   --message "Nutze exec und führe 'claw-code-local --version' aus." \
   --json
