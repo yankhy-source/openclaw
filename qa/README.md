@@ -15,5 +15,6 @@ Key workflow:
 - `qa manual` is the scoped personality and style probe after the executable subset is green.
 - `pnpm qa:local-agents:bootstrap` syncs the local coding profiles and `claw-code` skill into `~/.openclaw`.
 - `pnpm qa:local-agents:selftest` runs the local end-to-end coding stack check, including WhatsApp reply delivery.
+- `pnpm qa:local-agents:task-smoke` runs one small real repo task through `oc-builder` and verifies the tool usage in session logs.
 
 Keep this folder in git. Add new scenarios here before wiring them into automation.

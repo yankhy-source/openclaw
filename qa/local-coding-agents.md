@@ -54,6 +54,13 @@ PATH="${OPENCLAW_SELFTEST_NODE_BIN:-$HOME/.node22/current/bin}:$PATH" \
 pnpm qa:local-agents:selftest
 ```
 
+Run the builder against one small real repo task:
+
+```bash
+PATH="${OPENCLAW_SELFTEST_NODE_BIN:-$HOME/.node22/current/bin}:$PATH" \
+pnpm qa:local-agents:task-smoke
+```
+
 The selftest script already checks `OPENCLAW_SELFTEST_NODE_BIN` and otherwise
 falls back to `$HOME/.node22/current/bin`. Keep that override only when your
 login shell resolves `openclaw` through an older Node runtime.
@@ -70,6 +77,12 @@ command, so `claw-code-local summary` is not a stable probe.
 - repo patching through `oc-builder`
 - GitHub CLI access through `oc-github`
 - live WhatsApp self-delivery through `main`
+
+## What the Task Smoke Verifies
+
+- `oc-builder` can read real repo files with `read`
+- `oc-builder` can modify a repo-local temp file with `apply_patch` or `edit`
+- the session log contains the expected repo-read and repo-write tool calls
 
 ## Real Task Examples
 
