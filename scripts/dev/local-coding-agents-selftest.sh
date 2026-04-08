@@ -75,6 +75,50 @@ assert_tool_call() {
   fi
 }
 
+assert_exec_result() {
+  local agent_id="$1"
+  local command_substring="$2"
+  local expected_output="$3"
+  local session_file
+  session_file="$(latest_session_jsonl "$agent_id")"
+  if [[ -z "$session_file" || ! -f "$session_file" ]]; then
+    echo "missing session log for $agent_id" >&2
+    exit 1
+  fi
+  python3 - <<'PY' "$session_file" "$command_substring" "$expected_output"
+import json, sys
+
+session_file, command_substring, expected_output = sys.argv[1], sys.argv[2], sys.argv[3]
+tool_calls = {}
+
+with open(session_file, "r", encoding="utf-8") as handle:
+    for raw_line in handle:
+        raw_line = raw_line.strip()
+        if not raw_line:
+            continue
+        entry = json.loads(raw_line)
+        message = entry.get("message") or {}
+        role = message.get("role")
+        if role == "assistant":
+            for item in message.get("content") or []:
+                if item.get("type") == "toolCall" and item.get("name") == "exec":
+                    tool_calls[item.get("id")] = (item.get("arguments") or {}).get("command", "")
+        elif role == "toolResult" and message.get("toolName") == "exec":
+            tool_call_id = message.get("toolCallId")
+            command = tool_calls.get(tool_call_id, "")
+            details = message.get("details") or {}
+            aggregated = (details.get("aggregated") or "").strip()
+            exit_code = details.get("exitCode")
+            if command_substring in command and exit_code == 0 and aggregated == expected_output:
+                print(expected_output)
+                raise SystemExit(0)
+
+raise SystemExit(
+    f"missing exec result for command containing {command_substring!r} with output {expected_output!r} in {session_file}"
+)
+PY
+}
+
 echo "== bootstrap local coding agents =="
 node "$REPO_ROOT/scripts/dev/bootstrap-local-coding-agents.mjs" >/dev/null
 
@@ -85,21 +129,8 @@ echo "== claw-code wrapper proof =="
 CLAW_NORMALIZE_CMD="claw-code-local --version | sed -n '/Version/p' | tr -s ' ' | sed 's/^ //'"
 CLAW_EXPECTED="$(eval "$CLAW_NORMALIZE_CMD")"
 openclaw agent --agent claw-code --message "Nutze exec, führe \"$CLAW_NORMALIZE_CMD\" aus und antworte exakt mit der ausgegebenen Zeile." --json >"$CLAW_JSON"
-python3 - <<'PY' "$CLAW_JSON" "$CLAW_EXPECTED"
-import json, sys
-path, expected = sys.argv[1], sys.argv[2]
-with open(path, "r", encoding="utf-8") as handle:
-    raw = handle.read()
-start = raw.find("{")
-if start < 0:
-    raise SystemExit(f"{path}: missing JSON payload")
-payload = json.loads(raw[start:])
-text = payload["result"]["payloads"][0]["text"]
-if text != expected:
-    raise SystemExit(f"unexpected claw-code version output: {text!r} != {expected!r}")
-print(text)
-PY
 assert_tool_call "claw-code" '"name":"exec"'
+assert_exec_result "claw-code" "claw-code-local --version" "$CLAW_EXPECTED" >/dev/null
 
 echo "== exec proof =="
 EXEC_EXPECTED="EXEC_OK:$(cd "$REPO_ROOT" && pwd)"
@@ -128,9 +159,10 @@ assert_tool_call "oc-builder" '"name":"apply_patch"|"name":"edit"|"name":"write"
 
 echo "== github proof =="
 GITHUB_EXPECTED="GITHUB_OK:yankhy-source/claw-code-parity"
-openclaw agent --agent oc-github --message "Nutze exec und führe 'gh repo view yankhy-source/claw-code-parity --json nameWithOwner,isFork,url' aus. Antworte exakt mit $GITHUB_EXPECTED." --json >"$GITHUB_JSON"
-run_json_assert "$GITHUB_JSON" "$GITHUB_EXPECTED" >/dev/null
+GITHUB_CMD="gh repo view yankhy-source/claw-code-parity --json nameWithOwner --jq '\"GITHUB_OK:\" + .nameWithOwner'"
+openclaw agent --agent oc-github --message "Nutze exec und führe \"$GITHUB_CMD\" aus. Antworte exakt mit $GITHUB_EXPECTED." --json >"$GITHUB_JSON"
 assert_tool_call "oc-github" '"name":"exec"'
+assert_exec_result "oc-github" "gh repo view yankhy-source/claw-code-parity" "$GITHUB_EXPECTED" >/dev/null
 
 echo "== whatsapp reply proof =="
 SELF_E164="${OPENCLAW_SELFTEST_WHATSAPP_TO:-$(openclaw channels status --json | python3 -c 'import json, sys; raw=sys.stdin.read(); start=raw.find("{"); assert start >= 0, raw; print(json.loads(raw[start:])["channels"]["whatsapp"]["self"]["e164"])')}"
