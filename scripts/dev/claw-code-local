@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+OPENCLAW_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+PARITY_ROOT="${CLAW_CODE_PARITY_ROOT:-$OPENCLAW_ROOT/../claw-code-parity}"
+PARITY_WRAPPER="$PARITY_ROOT/scripts/claw-code"
+RUST_BIN="$PARITY_ROOT/rust/target/release/claw"
+
+if [[ ! -d "$PARITY_ROOT" ]]; then
+  echo "claw-code-local: missing parity repo at $PARITY_ROOT" >&2
+  exit 1
+fi
+
+if [[ -x "$PARITY_WRAPPER" ]]; then
+  exec "$PARITY_WRAPPER" "$@"
+fi
+
+if [[ -x "$RUST_BIN" ]]; then
+  exec "$RUST_BIN" "$@"
+fi
+
+echo "claw-code-local: no runnable claw-code launcher found under $PARITY_ROOT" >&2
+exit 1
