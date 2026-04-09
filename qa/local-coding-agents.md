@@ -98,6 +98,13 @@ OPENCLAW_SELFTEST_MAX_AGE_SECONDS=21600 \
 bash scripts/dev/local-coding-agents-ensure.sh --live
 ```
 
+Run the focused WhatsApp client smoke on top of the latest live summary:
+
+```bash
+PATH="${OPENCLAW_SELFTEST_NODE_BIN:-$HOME/.node22/current/bin}:$PATH" \
+pnpm qa:local-agents:whatsapp-smoke
+```
+
 Run the full end-to-end selftest:
 
 ```bash
@@ -177,6 +184,13 @@ command, so `claw-code-local summary` is not a stable probe.
 - `main` delegated patch work through `oc-builder`
 - live WhatsApp self-delivery through `main`
 - stable JSON summary output for the latest run
+
+## What the WhatsApp Client Smoke Verifies
+
+- `doctor`/`ensure` produce or confirm a fresh enough live summary
+- `main` can read the latest summary file over the live WhatsApp delivery path
+- the live WhatsApp reply matches the exact derived summary string
+- the main session log contains the expected `read` tool call on the summary file
 
 ## What the Task Smoke Verifies
 

@@ -1185,6 +1185,7 @@
     "qa:local-agents:status": "bash scripts/dev/local-coding-agents-status.sh",
     "qa:local-agents:core-selftest": "OPENCLAW_SELFTEST_SKIP_WHATSAPP=1 bash scripts/dev/local-coding-agents-selftest.sh",
     "qa:local-agents:selftest": "bash scripts/dev/local-coding-agents-selftest.sh",
+    "qa:local-agents:whatsapp-smoke": "bash scripts/dev/local-whatsapp-client-smoke.sh",
     "qa:local-agents:main-smoke": "bash scripts/dev/local-main-orchestrator-smoke.sh",
     "qa:local-agents:routing-smoke": "bash scripts/dev/local-main-routing-smoke.sh",
     "qa:local-agents:main-task-smoke": "bash scripts/dev/local-main-task-smoke.sh",
