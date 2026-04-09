@@ -72,6 +72,19 @@ Require freshness for automation or agent gating:
 OPENCLAW_SELFTEST_MAX_AGE_SECONDS=21600 pnpm qa:local-agents:status
 ```
 
+Ensure a fresh enough green selftest exists and rerun only if needed:
+
+```bash
+pnpm qa:local-agents:ensure
+```
+
+Require a fresh live run instead of accepting a fresh core-only result:
+
+```bash
+OPENCLAW_SELFTEST_MAX_AGE_SECONDS=21600 \
+bash scripts/dev/local-coding-agents-ensure.sh --live
+```
+
 Run the full end-to-end selftest:
 
 ```bash
@@ -98,7 +111,8 @@ Both selftest modes also refresh a stable machine-readable report at
 `.local-agent-last-selftest.json` in the repo root. Override the target path
 with `OPENCLAW_SELFTEST_SUMMARY_PATH` if another consumer needs a different
 location. Use `pnpm qa:local-agents:status --json` only via the underlying
-script invocation if a caller needs the enriched JSON form.
+script invocation if a caller needs the enriched JSON form. The `ensure` script
+builds on that summary and only reruns the minimum required mode.
 
 Run the builder against one small real repo task:
 
