@@ -156,3 +156,6 @@ extensions/qa-lab/web/dist/
 .local-main-orchestrator-smoke.*/
 .local-main-routing-smoke.*/
 .local-main-task-smoke.*/
+.local-human-eval.*/
+.local-human-eval/
+.local-agent-last-human-eval.json

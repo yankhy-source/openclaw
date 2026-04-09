@@ -12,7 +12,7 @@ const stateDir = resolveHomePath(process.env.OPENCLAW_STATE_DIR ?? path.join(hom
 const configPath = resolveHomePath(process.env.OPENCLAW_CONFIG_PATH ?? path.join(stateDir, "openclaw.json"));
 const sharedSkillsRoot = path.join(stateDir, "skills");
 const parityRoot = resolveHomePath(process.env.CLAW_CODE_PARITY_ROOT ?? path.join(repoRoot, "..", "claw-code-parity"));
-const sharedSkillIds = ["claw-code-local", "main-tool-discipline"];
+const sharedSkillIds = ["claw-code-local", "main-tool-discipline", "main-human-operator"];
 const mainPrimaryModel = "openai-codex/gpt-5.3-codex-spark";
 const mainFallbackModels = [
   "heretic-local/qwen3-4b-instruct-2507",
@@ -169,7 +169,7 @@ function mutateConfig(config) {
   const mainAgent = config.agents.list.find((entry) => entry && entry.id === "main");
   if (mainAgent) {
     const skills = Array.isArray(mainAgent.skills) ? mainAgent.skills : [];
-    mainAgent.skills = uniqueStrings([...skills, "main-tool-discipline"]);
+    mainAgent.skills = uniqueStrings([...skills, "main-tool-discipline", "main-human-operator"]);
     mainAgent.model = {
       primary: mainPrimaryModel,
       fallbacks: uniqueStrings(mainFallbackModels),

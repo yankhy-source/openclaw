@@ -14,10 +14,12 @@ It is intentionally local-first:
 - `scripts/dev/bootstrap-local-coding-agents.mjs`
   - syncs the `claw-code-local` skill into `~/.openclaw/skills`
   - syncs the `main-tool-discipline` skill into `~/.openclaw/skills`
+  - syncs the `main-human-operator` skill into `~/.openclaw/skills`
   - upserts the local coding agent profiles
   - updates `tools.agentToAgent.allow`
   - extends `main.subagents.allowAgents`
   - adds `main-tool-discipline` to `main.skills`
+  - adds `main-human-operator` to `main.skills`
   - extends `main.tools.exec.pathPrepend`
   - writes a timestamped backup of `~/.openclaw/openclaw.json`
 - `scripts/dev/local-coding-agents-selftest.sh`
@@ -51,6 +53,7 @@ The local `main` agent is also hardened for exact tool-backed work:
 - fallback chain starts with `heretic-local/qwen3-4b-instruct-2507`
 - spawned subagents from `main` default to `openai-codex/gpt-5.3-codex-spark`
 - `main-tool-discipline` is synced into `~/.openclaw/skills` and attached to `main`
+- `main-human-operator` is synced into `~/.openclaw/skills` and attached to `main`
 
 ## Commands
 
@@ -104,6 +107,17 @@ Run the focused WhatsApp client smoke on top of the latest live summary:
 PATH="${OPENCLAW_SELFTEST_NODE_BIN:-$HOME/.node22/current/bin}:$PATH" \
 pnpm qa:local-agents:whatsapp-smoke
 ```
+
+Run a user-perspective intelligence eval against `main`:
+
+```bash
+PATH="${OPENCLAW_SELFTEST_NODE_BIN:-$HOME/.node22/current/bin}:$PATH" \
+pnpm qa:local-agents:human-eval
+```
+
+That eval now keeps its artifacts on disk under `.local-human-eval/` and refreshes
+`.local-agent-last-human-eval.json` in the repo root, so the created answers and
+artifact file remain inspectable after the run.
 
 Run the full end-to-end selftest:
 
@@ -191,6 +205,15 @@ command, so `claw-code-local summary` is not a stable probe.
 - `main` can read the latest summary file over the live WhatsApp delivery path
 - the live WhatsApp reply matches the exact derived summary string
 - the main session log contains the expected `read` tool call on the summary file
+
+## What the Human Perspective Eval Verifies
+
+- `main` answers a human-style status question in concise German
+- `main` produces a short next-step answer from the user's perspective
+- `main` creates a user-facing artifact file with current live status data
+- the live baseline is fresh before those tests run
+- the answer avoids internal test labels and raw JSON field names
+- the created artifact remains on disk for inspection after the eval
 
 ## What the Task Smoke Verifies
 

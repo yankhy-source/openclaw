@@ -20,6 +20,7 @@ Key workflow:
 - `pnpm qa:local-agents:core-selftest` runs the local coding-agent proofs without the live WhatsApp delivery step.
 - `pnpm qa:local-agents:selftest` runs the local end-to-end coding stack check, including `main` exact-read discipline, `main` subagent orchestration, specialist routing, delegated patch work, and WhatsApp reply delivery.
 - `pnpm qa:local-agents:whatsapp-smoke` runs the focused live WhatsApp client proof on top of `doctor/ensure`.
+- `pnpm qa:local-agents:human-eval` runs user-perspective questions and a user-facing artifact task against `main`, and keeps the outputs under `.local-human-eval/` plus `.local-agent-last-human-eval.json`.
 - both selftest modes refresh `.local-agent-last-selftest.json` in the repo root as a machine-readable status artifact for agents and automation.
 - `pnpm qa:local-agents:main-smoke` runs `main` as an orchestrator and verifies that it spawns a Codex-backed `oc-builder` child run.
 - `pnpm qa:local-agents:routing-smoke` verifies that `main` routes GitHub work to `oc-github` and `claw-code` work to `claw-code`.

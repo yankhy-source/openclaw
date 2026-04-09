@@ -86,7 +86,7 @@ main_fallbacks = [
     "groq/deepseek-r1-distill-llama-70b",
     "google-gemini/gemini-2.0-flash",
 ]
-shared_skill_ids = ["claw-code-local", "main-tool-discipline"]
+shared_skill_ids = ["claw-code-local", "main-tool-discipline", "main-human-operator"]
 agent_ids = ["oc-builder", "oc-github", "claw-code"]
 home_dir = Path.home()
 shared_path_prepend = [
@@ -153,7 +153,9 @@ if isinstance(config, dict):
             "subagents": main_agent.get("subagents"),
             "skills": main_agent.get("skills"),
         }
-        require("main-tool-discipline" in (main_agent.get("skills") or []), "main_skill_missing", "main is missing main-tool-discipline")
+        main_skills = main_agent.get("skills") or []
+        require("main-tool-discipline" in main_skills, "main_skill_missing", "main is missing main-tool-discipline")
+        require("main-human-operator" in main_skills, "main_human_skill_missing", "main is missing main-human-operator")
         model = main_agent.get("model") if isinstance(main_agent.get("model"), dict) else {}
         require(model.get("primary") == main_primary_model, "main_primary_mismatch", f"main.model.primary must be {main_primary_model}")
         fallbacks = model.get("fallbacks") if isinstance(model.get("fallbacks"), list) else []
