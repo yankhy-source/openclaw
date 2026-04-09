@@ -66,6 +66,19 @@ Read the last selftest result without running a new test:
 pnpm qa:local-agents:status
 ```
 
+Audit the local coding-agent config and latest selftest together:
+
+```bash
+pnpm qa:local-agents:doctor
+```
+
+Require a fresh enough live result during the audit:
+
+```bash
+OPENCLAW_SELFTEST_MAX_AGE_SECONDS=21600 \
+bash scripts/dev/local-coding-agents-doctor.sh --require-mode live
+```
+
 Require freshness for automation or agent gating:
 
 ```bash
@@ -112,7 +125,8 @@ Both selftest modes also refresh a stable machine-readable report at
 with `OPENCLAW_SELFTEST_SUMMARY_PATH` if another consumer needs a different
 location. Use `pnpm qa:local-agents:status --json` only via the underlying
 script invocation if a caller needs the enriched JSON form. The `ensure` script
-builds on that summary and only reruns the minimum required mode.
+builds on that summary and only reruns the minimum required mode. The `doctor`
+script combines summary health with bootstrap/config drift checks.
 
 Run the builder against one small real repo task:
 

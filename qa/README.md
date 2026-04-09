@@ -14,6 +14,7 @@ Key workflow:
 - `qa suite` is the executable frontier subset / regression loop.
 - `qa manual` is the scoped personality and style probe after the executable subset is green.
 - `pnpm qa:local-agents:bootstrap` syncs the local coding profiles and shared skills into `~/.openclaw`.
+- `pnpm qa:local-agents:doctor` audits the local coding-agent config plus latest selftest summary and exits non-zero on drift.
 - `pnpm qa:local-agents:ensure` checks the last selftest summary and reruns the minimal required selftest when the state is missing, stale, failed, or below the requested mode.
 - `pnpm qa:local-agents:status` reads the latest selftest summary and exits non-zero if the last run failed or is stale.
 - `pnpm qa:local-agents:core-selftest` runs the local coding-agent proofs without the live WhatsApp delivery step.
