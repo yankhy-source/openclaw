@@ -72,6 +72,16 @@ specialist routing smoke, and the delegated task smoke, so one green run covers
 direct tool proofs, delegated subagent proofs, delegated patch work, and
 WhatsApp reply delivery.
 
+Run the fast core selftest without the live WhatsApp delivery step:
+
+```bash
+PATH="${OPENCLAW_SELFTEST_NODE_BIN:-$HOME/.node22/current/bin}:$PATH" \
+pnpm qa:local-agents:core-selftest
+```
+
+Use the core variant for frequent local regressions. Keep the full selftest for
+end-to-end confidence on the live reply path.
+
 Run the builder against one small real repo task:
 
 ```bash

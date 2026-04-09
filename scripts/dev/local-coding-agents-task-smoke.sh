@@ -36,12 +36,12 @@ probe=claw-code-local --version
 EOF
 )"
 
-openclaw agent --agent oc-builder --message "Nutze read und lies package.json sowie qa/local-coding-agents.md. Nutze danach apply_patch oder edit und schreibe in $REPORT_FILE exakt diese vier Zeilen:
+run_openclaw_agent_json "$TASK_JSON" --agent oc-builder --message "Nutze read und lies package.json sowie qa/local-coding-agents.md. Nutze danach apply_patch oder edit und schreibe in $REPORT_FILE exakt diese vier Zeilen:
 LOCAL_AGENT_TASK_OK
 bootstrap=qa:local-agents:bootstrap
 selftest=qa:local-agents:selftest
 probe=claw-code-local --version
-Antworte exakt mit TASK_SMOKE_OK." --json >"$TASK_JSON"
+Antworte exakt mit TASK_SMOKE_OK."
 
 run_json_assert "$TASK_JSON" "TASK_SMOKE_OK" >/dev/null
 

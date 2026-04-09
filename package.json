@@ -1180,6 +1180,7 @@
     "qa:lab:up:fast": "node --import tsx scripts/qa-lab-up.ts --use-prebuilt-image --bind-ui-dist --skip-ui-build",
     "qa:lab:watch": "vite build --watch --config extensions/qa-lab/web/vite.config.ts",
     "qa:local-agents:bootstrap": "node scripts/dev/bootstrap-local-coding-agents.mjs",
+    "qa:local-agents:core-selftest": "OPENCLAW_SELFTEST_SKIP_WHATSAPP=1 bash scripts/dev/local-coding-agents-selftest.sh",
     "qa:local-agents:selftest": "bash scripts/dev/local-coding-agents-selftest.sh",
     "qa:local-agents:main-smoke": "bash scripts/dev/local-main-orchestrator-smoke.sh",
     "qa:local-agents:routing-smoke": "bash scripts/dev/local-main-routing-smoke.sh",

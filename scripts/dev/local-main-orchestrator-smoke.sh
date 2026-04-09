@@ -29,7 +29,7 @@ echo "== bootstrap local coding agents =="
 node "$REPO_ROOT/scripts/dev/bootstrap-local-coding-agents.mjs" >/dev/null
 
 echo "== main orchestrator smoke =="
-openclaw agent --agent main --message "Nutze sessions_spawn und starte einen oc-builder-Subagenten im aktuellen Repo. Child-Task: führe per exec den Befehl 'pwd' aus und überschreibe danach per exec exakt die bereits existierende Datei $PROOF_FILE mit MAIN_SUBAGENT_OK. Verwende genau diesen Pfad, keine neue Temp-Datei. Antworte exakt mit MAIN_SPAWN_OK, sobald der Child-Run akzeptiert wurde." --json >"$MAIN_JSON"
+run_openclaw_agent_json "$MAIN_JSON" --agent main --message "Nutze sessions_spawn und starte einen oc-builder-Subagenten im aktuellen Repo. Child-Task: führe per exec den Befehl 'pwd' aus und überschreibe danach per exec exakt die bereits existierende Datei $PROOF_FILE mit MAIN_SUBAGENT_OK. Verwende genau diesen Pfad, keine neue Temp-Datei. Antworte exakt mit MAIN_SPAWN_OK, sobald der Child-Run akzeptiert wurde."
 run_json_assert "$MAIN_JSON" "MAIN_SPAWN_OK" >/dev/null
 
 MAIN_SESSION="$(latest_session_jsonl "main")"

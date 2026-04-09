@@ -18,6 +18,58 @@ print(first_line if first_line == expected else text)
 PY
 }
 
+json_payload_has_result() {
+  local json_path="$1"
+  python3 - <<'PY' "$json_path"
+import json, sys
+path = sys.argv[1]
+with open(path, "r", encoding="utf-8") as handle:
+    raw = handle.read()
+start = raw.find("{")
+if start < 0:
+    raise SystemExit(1)
+payload = json.loads(raw[start:])
+raise SystemExit(0 if "result" in payload else 1)
+PY
+}
+
+run_openclaw_agent_json() {
+  local output_path="$1"
+  shift
+  local attempts="${OPENCLAW_SELFTEST_AGENT_RETRIES:-3}"
+  local delay="${OPENCLAW_SELFTEST_AGENT_RETRY_DELAY:-2}"
+  local attempt
+  local tmp_output
+  local status
+
+  for attempt in $(seq 1 "$attempts"); do
+    tmp_output="$(mktemp "${TMPDIR:-/tmp}/openclaw-agent-json.XXXXXX")"
+    if openclaw agent "$@" --json >"$tmp_output" 2>&1; then
+      status=0
+    else
+      status=$?
+    fi
+
+    if json_payload_has_result "$tmp_output"; then
+      mv "$tmp_output" "$output_path"
+      return 0
+    fi
+
+    if [[ "$attempt" -lt "$attempts" ]] && rg -q 'gateway closed \(1012\): service restart|Gateway agent failed; falling back to embedded|service restart' "$tmp_output"; then
+      rm -f "$tmp_output"
+      sleep "$delay"
+      continue
+    fi
+
+    cat "$tmp_output" >&2
+    rm -f "$tmp_output"
+    return "${status:-1}"
+  done
+
+  echo "openclaw agent did not produce a valid JSON result after $attempts attempts" >&2
+  return 1
+}
+
 latest_session_jsonl() {
   local agent_id="$1"
   python3 - <<'PY' "$STATE_DIR" "$agent_id"

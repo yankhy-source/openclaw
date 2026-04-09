@@ -58,12 +58,12 @@ EOF
 )"
 
 echo "== main delegated task smoke =="
-openclaw agent --agent main --message "Nutze sessions_spawn und starte einen oc-builder-Subagenten. Child-Task: lies zuerst exakt die Datei $PACKAGE_JSON und danach die Datei $INPUT_PROOF. Überschreibe danach per apply_patch, edit oder write exakt die bereits existierende Datei $REPORT_FILE mit diesen vier Zeilen:
+run_openclaw_agent_json "$MAIN_JSON" --agent main --message "Nutze sessions_spawn und starte einen oc-builder-Subagenten. Child-Task: lies zuerst exakt die Datei $PACKAGE_JSON und danach die Datei $INPUT_PROOF. Überschreibe danach per apply_patch, edit oder write exakt die bereits existierende Datei $REPORT_FILE mit diesen vier Zeilen:
 MAIN_TASK_SMOKE_OK
 package=<name aus package.json>
 version=<version aus package.json>
 token=<exakter Inhalt von $INPUT_PROOF>
-Verwende genau diesen Pfad. Antworte exakt mit MAIN_TASK_OK, sobald der Child-Run akzeptiert wurde." --json >"$MAIN_JSON"
+Verwende genau diesen Pfad. Antworte exakt mit MAIN_TASK_OK, sobald der Child-Run akzeptiert wurde."
 run_json_assert "$MAIN_JSON" "MAIN_TASK_OK" >/dev/null
 
 MAIN_SESSION="$(latest_session_jsonl "main")"

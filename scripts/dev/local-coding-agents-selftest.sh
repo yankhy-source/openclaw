@@ -18,6 +18,7 @@ MAIN_JSON="$SELFTEST_ROOT/main.json"
 READ_PROOF="$SELFTEST_ROOT/read-proof.txt"
 PATCH_TARGET="$SELFTEST_ROOT/patch-target.txt"
 MAIN_STRUCTURED_PROOF="$SELFTEST_ROOT/main-structured-proof.json"
+SKIP_WHATSAPP="${OPENCLAW_SELFTEST_SKIP_WHATSAPP:-0}"
 
 cleanup() {
   rm -rf "$SELFTEST_ROOT"
@@ -118,20 +119,20 @@ openclaw gateway health
 echo "== claw-code wrapper proof =="
 CLAW_NORMALIZE_CMD="claw-code-local --version | sed -n '/Version/p' | tr -s ' ' | sed 's/^ //'"
 CLAW_EXPECTED="$(eval "$CLAW_NORMALIZE_CMD")"
-openclaw agent --agent claw-code --message "Nutze exec, führe \"$CLAW_NORMALIZE_CMD\" aus und antworte exakt mit der ausgegebenen Zeile." --json >"$CLAW_JSON"
+run_openclaw_agent_json "$CLAW_JSON" --agent claw-code --message "Nutze exec, führe \"$CLAW_NORMALIZE_CMD\" aus und antworte exakt mit der ausgegebenen Zeile."
 assert_tool_call "claw-code" '"name":"exec"'
 assert_exec_result "claw-code" "claw-code-local --version" "$CLAW_EXPECTED" >/dev/null
 
 echo "== exec proof =="
 EXEC_EXPECTED="EXEC_OK:$(cd "$REPO_ROOT" && pwd)"
-openclaw agent --agent oc-builder --message "Nutze exec, führe 'pwd' aus und antworte exakt mit $EXEC_EXPECTED." --json >"$EXEC_JSON"
+run_openclaw_agent_json "$EXEC_JSON" --agent oc-builder --message "Nutze exec, führe 'pwd' aus und antworte exakt mit $EXEC_EXPECTED."
 run_json_assert "$EXEC_JSON" "$EXEC_EXPECTED" >/dev/null
 assert_tool_call "oc-builder" '"name":"exec"'
 
 echo "== read proof =="
 READ_EXPECTED="READ_OK_$(date +%s)"
 printf '%s\n' "$READ_EXPECTED" >"$READ_PROOF"
-openclaw agent --agent oc-builder --message "Nutze read, lies $READ_PROOF und antworte exakt mit dem Inhalt." --json >"$READ_JSON"
+run_openclaw_agent_json "$READ_JSON" --agent oc-builder --message "Nutze read, lies $READ_PROOF und antworte exakt mit dem Inhalt."
 run_json_assert "$READ_JSON" "$READ_EXPECTED" >/dev/null
 assert_tool_call "oc-builder" '"name":"read"'
 
@@ -142,7 +143,7 @@ cat >"$MAIN_STRUCTURED_PROOF" <<EOF
 {"default":"$MAIN_DEFAULT","fallback":"$MAIN_FALLBACK"}
 EOF
 MAIN_EXPECTED="DEFAULT=$MAIN_DEFAULT;FALLBACK=$MAIN_FALLBACK"
-openclaw agent --agent main --message "Nutze read, lies $MAIN_STRUCTURED_PROOF als JSON und antworte exakt mit $MAIN_EXPECTED." --json >"$MAIN_JSON"
+run_openclaw_agent_json "$MAIN_JSON" --agent main --message "Nutze read, lies $MAIN_STRUCTURED_PROOF als JSON und antworte exakt mit $MAIN_EXPECTED."
 run_json_assert "$MAIN_JSON" "$MAIN_EXPECTED" >/dev/null
 run_json_meta_assert "$MAIN_JSON" "openai-codex" "gpt-5.3-codex-spark" >/dev/null
 assert_tool_call "main" "\"name\":\"read\""
@@ -151,7 +152,7 @@ assert_tool_call "main" "$MAIN_STRUCTURED_PROOF"
 echo "== patch proof =="
 PATCH_EXPECTED="PATCH_OK_$(date +%s)"
 printf 'before\n' >"$PATCH_TARGET"
-openclaw agent --agent oc-builder --message "Nutze apply_patch oder edit, ändere $PATCH_TARGET so dass die Datei exakt '$PATCH_EXPECTED' enthält. Antworte exakt mit PATCH_DONE." --json >"$PATCH_JSON"
+run_openclaw_agent_json "$PATCH_JSON" --agent oc-builder --message "Nutze apply_patch oder edit, ändere $PATCH_TARGET so dass die Datei exakt '$PATCH_EXPECTED' enthält. Antworte exakt mit PATCH_DONE."
 run_json_assert "$PATCH_JSON" "PATCH_DONE" >/dev/null
 ACTUAL_PATCH="$(tr -d '\r' <"$PATCH_TARGET" | tr -d '\n')"
 if [[ "$ACTUAL_PATCH" != "$PATCH_EXPECTED" ]]; then
@@ -163,7 +164,7 @@ assert_tool_call "oc-builder" '"name":"apply_patch"|"name":"edit"|"name":"write"
 echo "== github proof =="
 GITHUB_EXPECTED="GITHUB_OK:yankhy-source/claw-code-parity"
 GITHUB_CMD="gh repo view yankhy-source/claw-code-parity --json nameWithOwner --jq '\"GITHUB_OK:\" + .nameWithOwner'"
-openclaw agent --agent oc-github --message "Nutze exec und führe \"$GITHUB_CMD\" aus. Antworte exakt mit $GITHUB_EXPECTED." --json >"$GITHUB_JSON"
+run_openclaw_agent_json "$GITHUB_JSON" --agent oc-github --message "Nutze exec und führe \"$GITHUB_CMD\" aus. Antworte exakt mit $GITHUB_EXPECTED."
 assert_tool_call "oc-github" '"name":"exec"'
 assert_exec_result "oc-github" "gh repo view yankhy-source/claw-code-parity" "$GITHUB_EXPECTED" >/dev/null
 
@@ -176,6 +177,12 @@ bash "$REPO_ROOT/scripts/dev/local-main-routing-smoke.sh"
 echo "== main delegated task smoke =="
 bash "$REPO_ROOT/scripts/dev/local-main-task-smoke.sh"
 
+if [[ "$SKIP_WHATSAPP" == "1" ]]; then
+  echo "== whatsapp reply proof skipped =="
+  echo "== local coding agent core selftests passed =="
+  exit 0
+fi
+
 echo "== whatsapp reply proof =="
 SELF_E164="${OPENCLAW_SELFTEST_WHATSAPP_TO:-$(openclaw channels status --json | python3 -c 'import json, sys; raw=sys.stdin.read(); start=raw.find("{"); assert start >= 0, raw; print(json.loads(raw[start:])["channels"]["whatsapp"]["self"]["e164"])')}"
 WA_EXPECTED="WA_SELFTEST_$(date +%s)"
@@ -184,7 +191,7 @@ if [[ ! -f "$GATEWAY_LOG" ]]; then
   exit 1
 fi
 WA_LOG_MARKER="$(wc -c <"$GATEWAY_LOG")"
-openclaw agent --agent main --channel whatsapp --to "$SELF_E164" --deliver --message "Antworte exakt: $WA_EXPECTED" --json >"$WA_JSON"
+run_openclaw_agent_json "$WA_JSON" --agent main --channel whatsapp --to "$SELF_E164" --deliver --message "Antworte exakt: $WA_EXPECTED"
 run_json_assert "$WA_JSON" "$WA_EXPECTED" >/dev/null
 python3 - <<'PY' "$GATEWAY_LOG" "$WA_LOG_MARKER" "$WA_EXPECTED"
 import sys
