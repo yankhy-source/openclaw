@@ -7,14 +7,18 @@ It is intentionally local-first:
 - it wires `claw-code` through the sibling `claw-code-parity` checkout
 - it creates fixed agent profiles in `~/.openclaw/openclaw.json`
 - it provides a reproducible selftest for the main local coding paths
+- it hardens the local `main` agent for exact tool-backed answers
 
 ## Files
 
 - `scripts/dev/bootstrap-local-coding-agents.mjs`
   - syncs the `claw-code-local` skill into `~/.openclaw/skills`
+  - syncs the `main-tool-discipline` skill into `~/.openclaw/skills`
   - upserts the local coding agent profiles
   - updates `tools.agentToAgent.allow`
   - extends `main.subagents.allowAgents`
+  - adds `main-tool-discipline` to `main.skills`
+  - extends `main.tools.exec.pathPrepend`
   - writes a timestamped backup of `~/.openclaw/openclaw.json`
 - `scripts/dev/local-coding-agents-selftest.sh`
   - validates `claw-code`, `exec`, `read`, `patch`, GitHub, and WhatsApp reply delivery
@@ -38,6 +42,12 @@ The bootstrap adds these profiles:
   - purpose: local `claw-code` execution
 
 All three use `openai-codex/gpt-5.3-codex-spark` in the current local setup.
+
+The local `main` agent is also hardened for exact tool-backed work:
+
+- primary model: `openai-codex/gpt-5.3-codex-spark`
+- fallback chain starts with `heretic-local/qwen3-4b-instruct-2507`
+- `main-tool-discipline` is synced into `~/.openclaw/skills` and attached to `main`
 
 ## Commands
 
@@ -74,6 +84,7 @@ command, so `claw-code-local summary` is not a stable probe.
 - `claw-code` wrapper invocation through the `claw-code` agent
 - `exec` through `oc-builder`
 - repo file reads through `oc-builder`
+- exact JSON read + formatting through `main`
 - repo patching through `oc-builder`
 - GitHub CLI access through `oc-github`
 - live WhatsApp self-delivery through `main`

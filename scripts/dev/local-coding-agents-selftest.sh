@@ -14,8 +14,10 @@ PATCH_JSON="$SELFTEST_ROOT/patch.json"
 GITHUB_JSON="$SELFTEST_ROOT/github.json"
 CLAW_JSON="$SELFTEST_ROOT/claw-code.json"
 WA_JSON="$SELFTEST_ROOT/whatsapp.json"
+MAIN_JSON="$SELFTEST_ROOT/main.json"
 READ_PROOF="$SELFTEST_ROOT/read-proof.txt"
 PATCH_TARGET="$SELFTEST_ROOT/patch-target.txt"
+MAIN_STRUCTURED_PROOF="$SELFTEST_ROOT/main-structured-proof.json"
 
 cleanup() {
   rm -rf "$SELFTEST_ROOT"
@@ -46,6 +48,30 @@ text = payload["result"]["payloads"][0]["text"]
 if text != expected:
     raise SystemExit(f"{path}: unexpected text {text!r} != {expected!r}")
 print(text)
+PY
+}
+
+run_json_meta_assert() {
+  local json_path="$1"
+  local expected_provider="$2"
+  local expected_model="$3"
+  python3 - <<'PY' "$json_path" "$expected_provider" "$expected_model"
+import json, sys
+path, expected_provider, expected_model = sys.argv[1], sys.argv[2], sys.argv[3]
+with open(path, "r", encoding="utf-8") as handle:
+    raw = handle.read()
+start = raw.find("{")
+if start < 0:
+    raise SystemExit(f"{path}: missing JSON payload")
+payload = json.loads(raw[start:])
+meta = payload["result"]["meta"]["agentMeta"]
+provider = meta["provider"]
+model = meta["model"]
+if provider != expected_provider or model != expected_model:
+    raise SystemExit(
+        f"{path}: unexpected agent meta provider/model {(provider, model)!r} != {(expected_provider, expected_model)!r}"
+    )
+print(f"{provider}/{model}")
 PY
 }
 
@@ -145,6 +171,19 @@ printf '%s\n' "$READ_EXPECTED" >"$READ_PROOF"
 openclaw agent --agent oc-builder --message "Nutze read, lies $READ_PROOF und antworte exakt mit dem Inhalt." --json >"$READ_JSON"
 run_json_assert "$READ_JSON" "$READ_EXPECTED" >/dev/null
 assert_tool_call "oc-builder" '"name":"read"'
+
+echo "== main exact-read proof =="
+MAIN_DEFAULT="heretic-local/qwen3-4b-instruct-2507"
+MAIN_FALLBACK="openai-codex/gpt-5.3-codex-spark"
+cat >"$MAIN_STRUCTURED_PROOF" <<EOF
+{"default":"$MAIN_DEFAULT","fallback":"$MAIN_FALLBACK"}
+EOF
+MAIN_EXPECTED="DEFAULT=$MAIN_DEFAULT;FALLBACK=$MAIN_FALLBACK"
+openclaw agent --agent main --message "Nutze read, lies $MAIN_STRUCTURED_PROOF als JSON und antworte exakt mit $MAIN_EXPECTED." --json >"$MAIN_JSON"
+run_json_assert "$MAIN_JSON" "$MAIN_EXPECTED" >/dev/null
+run_json_meta_assert "$MAIN_JSON" "openai-codex" "gpt-5.3-codex-spark" >/dev/null
+assert_tool_call "main" "\"name\":\"read\""
+assert_tool_call "main" "$MAIN_STRUCTURED_PROOF"
 
 echo "== patch proof =="
 PATCH_EXPECTED="PATCH_OK_$(date +%s)"

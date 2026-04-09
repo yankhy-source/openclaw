@@ -12,8 +12,14 @@ const stateDir = resolveHomePath(process.env.OPENCLAW_STATE_DIR ?? path.join(hom
 const configPath = resolveHomePath(process.env.OPENCLAW_CONFIG_PATH ?? path.join(stateDir, "openclaw.json"));
 const sharedSkillsRoot = path.join(stateDir, "skills");
 const parityRoot = resolveHomePath(process.env.CLAW_CODE_PARITY_ROOT ?? path.join(repoRoot, "..", "claw-code-parity"));
-const sourceSkillDir = path.join(repoRoot, "skills", "claw-code-local");
-const targetSkillDir = path.join(sharedSkillsRoot, "claw-code-local");
+const sharedSkillIds = ["claw-code-local", "main-tool-discipline"];
+const mainPrimaryModel = "openai-codex/gpt-5.3-codex-spark";
+const mainFallbackModels = [
+  "heretic-local/qwen3-4b-instruct-2507",
+  "groq/llama-3.3-70b-versatile",
+  "groq/deepseek-r1-distill-llama-70b",
+  "google-gemini/gemini-2.0-flash",
+];
 
 const sharedPathPrepend = [
   path.join(repoRoot, "scripts", "dev"),
@@ -26,7 +32,7 @@ const agentIds = ["oc-builder", "oc-github", "claw-code"];
 
 await ensureExists(path.dirname(configPath), "OpenClaw config directory");
 await ensureExists(parityRoot, "claw-code parity repository");
-await syncSharedSkill();
+await syncSharedSkills();
 const { config, rawConfig } = await readConfig();
 const backupPath = await backupConfig(rawConfig);
 mutateConfig(config);
@@ -35,7 +41,7 @@ await fs.writeFile(configPath, JSON.stringify(config, null, 2) + "\n", "utf8");
 const summary = {
   configPath,
   backupPath,
-  sharedSkill: targetSkillDir,
+  sharedSkills: sharedSkillIds.map((id) => path.join(sharedSkillsRoot, id)),
   repoRoot,
   parityRoot,
   agentIds,
@@ -60,10 +66,14 @@ async function ensureExists(targetPath, label) {
   }
 }
 
-async function syncSharedSkill() {
-  await ensureExists(sourceSkillDir, "Source claw-code-local skill");
-  await fs.mkdir(targetSkillDir, { recursive: true });
-  await fs.copyFile(path.join(sourceSkillDir, "SKILL.md"), path.join(targetSkillDir, "SKILL.md"));
+async function syncSharedSkills() {
+  for (const skillId of sharedSkillIds) {
+    const sourceSkillDir = path.join(repoRoot, "skills", skillId);
+    const targetSkillDir = path.join(sharedSkillsRoot, skillId);
+    await ensureExists(sourceSkillDir, `Source ${skillId} skill`);
+    await fs.mkdir(targetSkillDir, { recursive: true });
+    await fs.copyFile(path.join(sourceSkillDir, "SKILL.md"), path.join(targetSkillDir, "SKILL.md"));
+  }
 }
 
 async function readConfig() {
@@ -155,9 +165,20 @@ function mutateConfig(config) {
 
   const mainAgent = config.agents.list.find((entry) => entry && entry.id === "main");
   if (mainAgent) {
+    const skills = Array.isArray(mainAgent.skills) ? mainAgent.skills : [];
+    mainAgent.skills = uniqueStrings([...skills, "main-tool-discipline"]);
+    mainAgent.model = {
+      primary: mainPrimaryModel,
+      fallbacks: uniqueStrings(mainFallbackModels),
+    };
     mainAgent.subagents ??= {};
     const allowAgents = Array.isArray(mainAgent.subagents.allowAgents) ? mainAgent.subagents.allowAgents : [];
     mainAgent.subagents.allowAgents = uniqueStrings([...allowAgents, ...agentIds]);
+    mainAgent.tools = mergeTools(mainAgent.tools, {
+      exec: {
+        pathPrepend: sharedPathPrepend,
+      },
+    });
   }
 }
 
