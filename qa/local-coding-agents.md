@@ -22,6 +22,8 @@ It is intentionally local-first:
   - writes a timestamped backup of `~/.openclaw/openclaw.json`
 - `scripts/dev/local-coding-agents-selftest.sh`
   - validates `claw-code`, `exec`, `read`, `patch`, GitHub, and WhatsApp reply delivery
+- `scripts/dev/lib/openclaw-smoke-common.sh`
+  - shared helper functions for JSON assertions, session resolution, and file waits across the smoke scripts
 - `scripts/dev/claw-code-local`
   - stable repo-local launcher for the sibling `claw-code-parity` checkout
 - `skills/claw-code-local/SKILL.md`
@@ -142,8 +144,9 @@ command, so `claw-code-local summary` is not a stable probe.
 ## What the Main Delegated Task Smoke Verifies
 
 - `main` uses `sessions_spawn` to hand a small repo task to `oc-builder`
-- the `oc-builder` child reads real repo files
+- the `oc-builder` child reads the exact repo `package.json` plus a repo-local proof token file
 - the `oc-builder` child patches a concrete report file
+- the task stays pinned to the intended repo instead of silently reading from `~/.openclaw/workspace`
 - the child session stays on `openai-codex/gpt-5.3-codex-spark`
 
 ## Real Task Examples

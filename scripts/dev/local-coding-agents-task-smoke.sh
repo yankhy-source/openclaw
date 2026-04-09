@@ -22,50 +22,7 @@ fi
 PATH="$REPO_ROOT/scripts/dev:$REPO_ROOT/../claw-code-parity/scripts:$PATH"
 export PATH
 
-run_json_assert() {
-  local json_path="$1"
-  local expected="$2"
-  python3 - <<'PY' "$json_path" "$expected"
-import json, sys
-path, expected = sys.argv[1], sys.argv[2]
-with open(path, "r", encoding="utf-8") as handle:
-    raw = handle.read()
-start = raw.find("{")
-if start < 0:
-    raise SystemExit(f"{path}: missing JSON payload")
-payload = json.loads(raw[start:])
-text = payload["result"]["payloads"][0]["text"]
-if text != expected:
-    raise SystemExit(f"{path}: unexpected text {text!r} != {expected!r}")
-print(text)
-PY
-}
-
-latest_session_jsonl() {
-  local agent_id="$1"
-  python3 - <<'PY' "$STATE_DIR" "$agent_id"
-import pathlib, sys
-state_dir, agent_id = sys.argv[1], sys.argv[2]
-session_dir = pathlib.Path(state_dir) / "agents" / agent_id / "sessions"
-files = sorted(session_dir.glob("*.jsonl"), key=lambda item: item.stat().st_mtime, reverse=True)
-print(files[0] if files else "")
-PY
-}
-
-assert_session_pattern() {
-  local agent_id="$1"
-  local pattern="$2"
-  local session_file
-  session_file="$(latest_session_jsonl "$agent_id")"
-  if [[ -z "$session_file" || ! -f "$session_file" ]]; then
-    echo "missing session log for $agent_id" >&2
-    exit 1
-  fi
-  if ! rg -q "$pattern" "$session_file"; then
-    echo "expected pattern $pattern in $session_file" >&2
-    exit 1
-  fi
-}
+source "$SCRIPT_DIR/lib/openclaw-smoke-common.sh"
 
 echo "== bootstrap local coding agents =="
 node "$REPO_ROOT/scripts/dev/bootstrap-local-coding-agents.mjs" >/dev/null
@@ -95,9 +52,9 @@ if [[ "$ACTUAL_REPORT" != "$EXPECTED_REPORT" ]]; then
   exit 1
 fi
 
-assert_session_pattern "oc-builder" '"name":"read"'
-assert_session_pattern "oc-builder" 'package\.json'
-assert_session_pattern "oc-builder" 'qa/local-coding-agents\.md'
-assert_session_pattern "oc-builder" '"name":"apply_patch"|"name":"edit"|"name":"write"'
+assert_latest_session_pattern "oc-builder" '"name":"read"'
+assert_latest_session_pattern "oc-builder" 'package\.json'
+assert_latest_session_pattern "oc-builder" 'qa/local-coding-agents\.md'
+assert_latest_session_pattern "oc-builder" '"name":"apply_patch"|"name":"edit"|"name":"write"'
 
 echo "== local coding agent task smoke passed =="
