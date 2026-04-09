@@ -60,6 +60,18 @@ Bootstrap the profiles and skill sync:
 pnpm qa:local-agents:bootstrap
 ```
 
+Read the last selftest result without running a new test:
+
+```bash
+pnpm qa:local-agents:status
+```
+
+Require freshness for automation or agent gating:
+
+```bash
+OPENCLAW_SELFTEST_MAX_AGE_SECONDS=21600 pnpm qa:local-agents:status
+```
+
 Run the full end-to-end selftest:
 
 ```bash
@@ -85,7 +97,8 @@ end-to-end confidence on the live reply path.
 Both selftest modes also refresh a stable machine-readable report at
 `.local-agent-last-selftest.json` in the repo root. Override the target path
 with `OPENCLAW_SELFTEST_SUMMARY_PATH` if another consumer needs a different
-location.
+location. Use `pnpm qa:local-agents:status --json` only via the underlying
+script invocation if a caller needs the enriched JSON form.
 
 Run the builder against one small real repo task:
 
