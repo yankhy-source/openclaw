@@ -82,6 +82,11 @@ pnpm qa:local-agents:core-selftest
 Use the core variant for frequent local regressions. Keep the full selftest for
 end-to-end confidence on the live reply path.
 
+Both selftest modes also refresh a stable machine-readable report at
+`.local-agent-last-selftest.json` in the repo root. Override the target path
+with `OPENCLAW_SELFTEST_SUMMARY_PATH` if another consumer needs a different
+location.
+
 Run the builder against one small real repo task:
 
 ```bash
@@ -130,6 +135,7 @@ command, so `claw-code-local summary` is not a stable probe.
 - `main` specialist routing to `oc-github` and `claw-code`
 - `main` delegated patch work through `oc-builder`
 - live WhatsApp self-delivery through `main`
+- stable JSON summary output for the latest run
 
 ## What the Task Smoke Verifies
 
