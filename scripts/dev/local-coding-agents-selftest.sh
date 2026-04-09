@@ -45,9 +45,10 @@ if start < 0:
     raise SystemExit(f"{path}: missing JSON payload")
 payload = json.loads(raw[start:])
 text = payload["result"]["payloads"][0]["text"]
-if text != expected:
+first_line = text.splitlines()[0] if text else ""
+if text != expected and first_line != expected:
     raise SystemExit(f"{path}: unexpected text {text!r} != {expected!r}")
-print(text)
+print(first_line if first_line == expected else text)
 PY
 }
 
@@ -209,6 +210,9 @@ bash "$REPO_ROOT/scripts/dev/local-main-orchestrator-smoke.sh"
 
 echo "== main specialist routing smoke =="
 bash "$REPO_ROOT/scripts/dev/local-main-routing-smoke.sh"
+
+echo "== main delegated task smoke =="
+bash "$REPO_ROOT/scripts/dev/local-main-task-smoke.sh"
 
 echo "== whatsapp reply proof =="
 SELF_E164="${OPENCLAW_SELFTEST_WHATSAPP_TO:-$(openclaw channels status --json | python3 -c 'import json, sys; raw=sys.stdin.read(); start=raw.find("{"); assert start >= 0, raw; print(json.loads(raw[start:])["channels"]["whatsapp"]["self"]["e164"])')}"

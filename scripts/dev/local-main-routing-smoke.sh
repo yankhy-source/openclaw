@@ -69,23 +69,51 @@ assert_session_pattern() {
   fi
 }
 
-find_agent_session_for_proof() {
-  local agent_id="$1"
-  local proof_file="$2"
-  python3 - <<'PY' "$STATE_DIR" "$agent_id" "$proof_file"
-import pathlib, sys
-state_dir, agent_id, proof_file = sys.argv[1], sys.argv[2], sys.argv[3]
-session_dir = pathlib.Path(state_dir) / "agents" / agent_id / "sessions"
-matches = []
-for path in session_dir.glob("*.jsonl"):
-    try:
-        text = path.read_text(encoding="utf-8")
-    except Exception:
-        continue
-    if proof_file in text:
-        matches.append(path)
-matches.sort(key=lambda item: item.stat().st_mtime, reverse=True)
-print(matches[0] if matches else "")
+child_session_file_from_main() {
+  local main_session="$1"
+  local agent_id="$2"
+  local target_path="$3"
+  python3 - <<'PY' "$STATE_DIR" "$main_session" "$agent_id" "$target_path"
+import json, pathlib, sys
+
+state_dir, main_session, agent_id, target_path = sys.argv[1:5]
+tool_calls = {}
+child_session_key = None
+
+with open(main_session, "r", encoding="utf-8") as handle:
+    for raw_line in handle:
+        raw_line = raw_line.strip()
+        if not raw_line:
+            continue
+        entry = json.loads(raw_line)
+        message = entry.get("message") or {}
+        role = message.get("role")
+        if role == "assistant":
+            for item in message.get("content") or []:
+                if item.get("type") != "toolCall" or item.get("name") != "sessions_spawn":
+                    continue
+                arguments = item.get("arguments") or {}
+                if arguments.get("agentId") == agent_id and target_path in (arguments.get("task") or ""):
+                    tool_calls[item.get("id")] = True
+        elif role == "toolResult" and message.get("toolName") == "sessions_spawn":
+            tool_call_id = message.get("toolCallId")
+            if tool_call_id in tool_calls:
+                details = message.get("details") or {}
+                child_session_key = details.get("childSessionKey")
+
+if not child_session_key:
+    print("")
+    raise SystemExit(0)
+
+sessions_index = pathlib.Path(state_dir) / "agents" / agent_id / "sessions" / "sessions.json"
+if not sessions_index.is_file():
+    print("")
+    raise SystemExit(0)
+
+with open(sessions_index, "r", encoding="utf-8") as handle:
+    data = json.load(handle)
+entry = data.get(child_session_key) or {}
+print(entry.get("sessionFile", ""))
 PY
 }
 
@@ -124,7 +152,7 @@ assert_session_pattern "$MAIN_SESSION" "$GITHUB_PROOF"
 
 GITHUB_SESSION=""
 for _ in $(seq 1 40); do
-  GITHUB_SESSION="$(find_agent_session_for_proof "oc-github" "$GITHUB_PROOF")"
+  GITHUB_SESSION="$(child_session_file_from_main "$MAIN_SESSION" "oc-github" "$GITHUB_PROOF")"
   if [[ -n "$GITHUB_SESSION" && -f "$GITHUB_SESSION" ]]; then
     break
   fi
@@ -154,7 +182,7 @@ assert_session_pattern "$MAIN_SESSION" "$CLAW_PROOF"
 
 CLAW_SESSION=""
 for _ in $(seq 1 40); do
-  CLAW_SESSION="$(find_agent_session_for_proof "claw-code" "$CLAW_PROOF")"
+  CLAW_SESSION="$(child_session_file_from_main "$MAIN_SESSION" "claw-code" "$CLAW_PROOF")"
   if [[ -n "$CLAW_SESSION" && -f "$CLAW_SESSION" ]]; then
     break
   fi

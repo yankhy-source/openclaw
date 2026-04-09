@@ -65,9 +65,10 @@ PATH="${OPENCLAW_SELFTEST_NODE_BIN:-$HOME/.node22/current/bin}:$PATH" \
 pnpm qa:local-agents:selftest
 ```
 
-That full selftest now also includes the `main` orchestrator smoke and the
-specialist routing smoke, so one green run covers direct tool proofs,
-delegated subagent proofs, and WhatsApp reply delivery.
+That full selftest now also includes the `main` orchestrator smoke, the
+specialist routing smoke, and the delegated task smoke, so one green run covers
+direct tool proofs, delegated subagent proofs, delegated patch work, and
+WhatsApp reply delivery.
 
 Run the builder against one small real repo task:
 
@@ -90,6 +91,13 @@ PATH="${OPENCLAW_SELFTEST_NODE_BIN:-$HOME/.node22/current/bin}:$PATH" \
 pnpm qa:local-agents:routing-smoke
 ```
 
+Run a small real patch task through `main -> oc-builder`:
+
+```bash
+PATH="${OPENCLAW_SELFTEST_NODE_BIN:-$HOME/.node22/current/bin}:$PATH" \
+pnpm qa:local-agents:main-task-smoke
+```
+
 The selftest script already checks `OPENCLAW_SELFTEST_NODE_BIN` and otherwise
 falls back to `$HOME/.node22/current/bin`. Keep that override only when your
 login shell resolves `openclaw` through an older Node runtime.
@@ -108,6 +116,7 @@ command, so `claw-code-local summary` is not a stable probe.
 - GitHub CLI access through `oc-github`
 - `main` subagent orchestration through `oc-builder`
 - `main` specialist routing to `oc-github` and `claw-code`
+- `main` delegated patch work through `oc-builder`
 - live WhatsApp self-delivery through `main`
 
 ## What the Task Smoke Verifies
@@ -129,6 +138,13 @@ command, so `claw-code-local summary` is not a stable probe.
 - `main` routes `claw-code` work to `claw-code`
 - the spawned specialist child sessions run on `openai-codex/gpt-5.3-codex-spark`
 - both specialist child sessions use `exec`
+
+## What the Main Delegated Task Smoke Verifies
+
+- `main` uses `sessions_spawn` to hand a small repo task to `oc-builder`
+- the `oc-builder` child reads real repo files
+- the `oc-builder` child patches a concrete report file
+- the child session stays on `openai-codex/gpt-5.3-codex-spark`
 
 ## Real Task Examples
 
