@@ -98,9 +98,12 @@ async function backupConfig(rawConfig) {
 
 function mutateConfig(config) {
   config.agents ??= {};
+  config.agents.defaults ??= {};
   config.agents.list = Array.isArray(config.agents.list) ? config.agents.list : [];
   config.tools ??= {};
   config.tools.agentToAgent ??= {};
+  config.agents.defaults.subagents ??= {};
+  config.agents.defaults.subagents.model = mainPrimaryModel;
 
   const desiredAgents = [
     {
@@ -172,6 +175,7 @@ function mutateConfig(config) {
       fallbacks: uniqueStrings(mainFallbackModels),
     };
     mainAgent.subagents ??= {};
+    mainAgent.subagents.model = mainPrimaryModel;
     const allowAgents = Array.isArray(mainAgent.subagents.allowAgents) ? mainAgent.subagents.allowAgents : [];
     mainAgent.subagents.allowAgents = uniqueStrings([...allowAgents, ...agentIds]);
     mainAgent.tools = mergeTools(mainAgent.tools, {

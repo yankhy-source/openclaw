@@ -47,6 +47,7 @@ The local `main` agent is also hardened for exact tool-backed work:
 
 - primary model: `openai-codex/gpt-5.3-codex-spark`
 - fallback chain starts with `heretic-local/qwen3-4b-instruct-2507`
+- spawned subagents from `main` default to `openai-codex/gpt-5.3-codex-spark`
 - `main-tool-discipline` is synced into `~/.openclaw/skills` and attached to `main`
 
 ## Commands
@@ -69,6 +70,13 @@ Run the builder against one small real repo task:
 ```bash
 PATH="${OPENCLAW_SELFTEST_NODE_BIN:-$HOME/.node22/current/bin}:$PATH" \
 pnpm qa:local-agents:task-smoke
+```
+
+Run the `main` agent as an orchestrator that spawns `oc-builder`:
+
+```bash
+PATH="${OPENCLAW_SELFTEST_NODE_BIN:-$HOME/.node22/current/bin}:$PATH" \
+pnpm qa:local-agents:main-smoke
 ```
 
 The selftest script already checks `OPENCLAW_SELFTEST_NODE_BIN` and otherwise
@@ -94,6 +102,13 @@ command, so `claw-code-local summary` is not a stable probe.
 - `oc-builder` can read real repo files with `read`
 - `oc-builder` can modify a repo-local temp file with `apply_patch` or `edit`
 - the session log contains the expected repo-read and repo-write tool calls
+
+## What the Main Orchestrator Smoke Verifies
+
+- `main` uses `sessions_spawn` to start an `oc-builder` child run
+- the spawned `oc-builder` child session runs on `openai-codex/gpt-5.3-codex-spark`
+- the spawned child uses `exec`
+- the spawned child writes the expected proof file
 
 ## Real Task Examples
 
