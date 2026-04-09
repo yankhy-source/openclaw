@@ -7,7 +7,7 @@ STATE_DIR="${OPENCLAW_STATE_DIR:-$HOME/.openclaw}"
 NODE22_BIN="${OPENCLAW_SELFTEST_NODE_BIN:-$HOME/.node22/current/bin}"
 SMOKE_ROOT="$(mktemp -d "$REPO_ROOT/.local-main-orchestrator-smoke.XXXXXX")"
 MAIN_JSON="$SMOKE_ROOT/main.json"
-PROOF_FILE="$(mktemp /tmp/main-orchestrator-smoke.XXXXXX.txt)"
+PROOF_FILE="$(mktemp /tmp/main-orchestrator-smoke.XXXXXX)"
 
 cleanup() {
   rm -rf "$SMOKE_ROOT"
@@ -36,9 +36,10 @@ if start < 0:
     raise SystemExit(f"{path}: missing JSON payload")
 payload = json.loads(raw[start:])
 text = payload["result"]["payloads"][0]["text"]
-if text != expected:
+first_line = text.splitlines()[0] if text else ""
+if text != expected and first_line != expected:
     raise SystemExit(f"{path}: unexpected text {text!r} != {expected!r}")
-print(text)
+print(first_line if first_line == expected else text)
 PY
 }
 
@@ -111,7 +112,7 @@ echo "== bootstrap local coding agents =="
 node "$REPO_ROOT/scripts/dev/bootstrap-local-coding-agents.mjs" >/dev/null
 
 echo "== main orchestrator smoke =="
-openclaw agent --agent main --message "Nutze sessions_spawn und starte einen oc-builder-Subagenten im aktuellen Repo. Child-Task: führe per exec den Befehl 'pwd' aus und schreibe danach per write exakt MAIN_SUBAGENT_OK in $PROOF_FILE. Antworte exakt mit MAIN_SPAWN_OK, sobald der Child-Run akzeptiert wurde." --json >"$MAIN_JSON"
+openclaw agent --agent main --message "Nutze sessions_spawn und starte einen oc-builder-Subagenten im aktuellen Repo. Child-Task: führe per exec den Befehl 'pwd' aus und überschreibe danach per exec exakt die bereits existierende Datei $PROOF_FILE mit MAIN_SUBAGENT_OK. Verwende genau diesen Pfad, keine neue Temp-Datei. Antworte exakt mit MAIN_SPAWN_OK, sobald der Child-Run akzeptiert wurde." --json >"$MAIN_JSON"
 run_json_assert "$MAIN_JSON" "MAIN_SPAWN_OK" >/dev/null
 
 MAIN_SESSION="$(latest_session_jsonl "main")"

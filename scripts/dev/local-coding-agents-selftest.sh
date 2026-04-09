@@ -204,6 +204,12 @@ openclaw agent --agent oc-github --message "Nutze exec und führe \"$GITHUB_CMD\
 assert_tool_call "oc-github" '"name":"exec"'
 assert_exec_result "oc-github" "gh repo view yankhy-source/claw-code-parity" "$GITHUB_EXPECTED" >/dev/null
 
+echo "== main orchestrator smoke =="
+bash "$REPO_ROOT/scripts/dev/local-main-orchestrator-smoke.sh"
+
+echo "== main specialist routing smoke =="
+bash "$REPO_ROOT/scripts/dev/local-main-routing-smoke.sh"
+
 echo "== whatsapp reply proof =="
 SELF_E164="${OPENCLAW_SELFTEST_WHATSAPP_TO:-$(openclaw channels status --json | python3 -c 'import json, sys; raw=sys.stdin.read(); start=raw.find("{"); assert start >= 0, raw; print(json.loads(raw[start:])["channels"]["whatsapp"]["self"]["e164"])')}"
 WA_EXPECTED="WA_SELFTEST_$(date +%s)"

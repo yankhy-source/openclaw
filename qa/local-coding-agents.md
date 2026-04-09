@@ -65,6 +65,10 @@ PATH="${OPENCLAW_SELFTEST_NODE_BIN:-$HOME/.node22/current/bin}:$PATH" \
 pnpm qa:local-agents:selftest
 ```
 
+That full selftest now also includes the `main` orchestrator smoke and the
+specialist routing smoke, so one green run covers direct tool proofs,
+delegated subagent proofs, and WhatsApp reply delivery.
+
 Run the builder against one small real repo task:
 
 ```bash
@@ -102,6 +106,8 @@ command, so `claw-code-local summary` is not a stable probe.
 - exact JSON read + formatting through `main`
 - repo patching through `oc-builder`
 - GitHub CLI access through `oc-github`
+- `main` subagent orchestration through `oc-builder`
+- `main` specialist routing to `oc-github` and `claw-code`
 - live WhatsApp self-delivery through `main`
 
 ## What the Task Smoke Verifies

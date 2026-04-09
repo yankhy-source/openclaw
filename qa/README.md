@@ -14,7 +14,7 @@ Key workflow:
 - `qa suite` is the executable frontier subset / regression loop.
 - `qa manual` is the scoped personality and style probe after the executable subset is green.
 - `pnpm qa:local-agents:bootstrap` syncs the local coding profiles and shared skills into `~/.openclaw`.
-- `pnpm qa:local-agents:selftest` runs the local end-to-end coding stack check, including `main` exact-read discipline and WhatsApp reply delivery.
+- `pnpm qa:local-agents:selftest` runs the local end-to-end coding stack check, including `main` exact-read discipline, `main` subagent orchestration, specialist routing, and WhatsApp reply delivery.
 - `pnpm qa:local-agents:main-smoke` runs `main` as an orchestrator and verifies that it spawns a Codex-backed `oc-builder` child run.
 - `pnpm qa:local-agents:routing-smoke` verifies that `main` routes GitHub work to `oc-github` and `claw-code` work to `claw-code`.
 - `pnpm qa:local-agents:task-smoke` runs one small real repo task through `oc-builder` and verifies the tool usage in session logs.

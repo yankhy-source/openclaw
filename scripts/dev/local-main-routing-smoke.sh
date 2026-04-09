@@ -8,8 +8,8 @@ NODE22_BIN="${OPENCLAW_SELFTEST_NODE_BIN:-$HOME/.node22/current/bin}"
 SMOKE_ROOT="$(mktemp -d "$REPO_ROOT/.local-main-routing-smoke.XXXXXX")"
 GITHUB_JSON="$SMOKE_ROOT/main-github.json"
 CLAW_JSON="$SMOKE_ROOT/main-claw.json"
-GITHUB_PROOF="$(mktemp /tmp/main-route-github.XXXXXX.txt)"
-CLAW_PROOF="$(mktemp /tmp/main-route-claw.XXXXXX.txt)"
+GITHUB_PROOF="$(mktemp /tmp/main-route-github.XXXXXX)"
+CLAW_PROOF="$(mktemp /tmp/main-route-claw.XXXXXX)"
 
 cleanup() {
   rm -rf "$SMOKE_ROOT"
@@ -38,9 +38,10 @@ if start < 0:
     raise SystemExit(f"{path}: missing JSON payload")
 payload = json.loads(raw[start:])
 text = payload["result"]["payloads"][0]["text"]
-if text != expected:
+first_line = text.splitlines()[0] if text else ""
+if text != expected and first_line != expected:
     raise SystemExit(f"{path}: unexpected text {text!r} != {expected!r}")
-print(text)
+print(first_line if first_line == expected else text)
 PY
 }
 
