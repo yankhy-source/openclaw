@@ -79,6 +79,13 @@ PATH="${OPENCLAW_SELFTEST_NODE_BIN:-$HOME/.node22/current/bin}:$PATH" \
 pnpm qa:local-agents:main-smoke
 ```
 
+Run the `main` agent through specialist routing (`oc-github`, `claw-code`):
+
+```bash
+PATH="${OPENCLAW_SELFTEST_NODE_BIN:-$HOME/.node22/current/bin}:$PATH" \
+pnpm qa:local-agents:routing-smoke
+```
+
 The selftest script already checks `OPENCLAW_SELFTEST_NODE_BIN` and otherwise
 falls back to `$HOME/.node22/current/bin`. Keep that override only when your
 login shell resolves `openclaw` through an older Node runtime.
@@ -109,6 +116,13 @@ command, so `claw-code-local summary` is not a stable probe.
 - the spawned `oc-builder` child session runs on `openai-codex/gpt-5.3-codex-spark`
 - the spawned child uses `exec`
 - the spawned child writes the expected proof file
+
+## What the Main Routing Smoke Verifies
+
+- `main` routes GitHub work to `oc-github`
+- `main` routes `claw-code` work to `claw-code`
+- the spawned specialist child sessions run on `openai-codex/gpt-5.3-codex-spark`
+- both specialist child sessions use `exec`
 
 ## Real Task Examples
 

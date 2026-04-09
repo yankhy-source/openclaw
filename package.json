@@ -1182,6 +1182,7 @@
     "qa:local-agents:bootstrap": "node scripts/dev/bootstrap-local-coding-agents.mjs",
     "qa:local-agents:selftest": "bash scripts/dev/local-coding-agents-selftest.sh",
     "qa:local-agents:main-smoke": "bash scripts/dev/local-main-orchestrator-smoke.sh",
+    "qa:local-agents:routing-smoke": "bash scripts/dev/local-main-routing-smoke.sh",
     "qa:local-agents:task-smoke": "bash scripts/dev/local-coding-agents-task-smoke.sh",
     "release:check": "pnpm check:base-config-schema && pnpm check:bundled-channel-config-metadata && pnpm config:docs:check && pnpm plugin-sdk:check-exports && pnpm plugin-sdk:api:check && node --import tsx scripts/release-check.ts",
     "release:openclaw:npm:check": "node --import tsx scripts/openclaw-npm-release-check.ts",
