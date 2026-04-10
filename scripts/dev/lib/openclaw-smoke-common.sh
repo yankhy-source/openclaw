@@ -210,10 +210,19 @@ openclaw_whatsapp_self_e164() {
       if python3 - <<'PY' "$tmp_output"
 import json, sys
 raw = open(sys.argv[1], "r", encoding="utf-8").read()
-start = raw.find("{")
-if start < 0:
+decoder = json.JSONDecoder()
+payload = None
+for index, char in enumerate(raw):
+    if char != "{":
+        continue
+    try:
+        candidate, _ = decoder.raw_decode(raw[index:])
+    except json.JSONDecodeError:
+        continue
+    if isinstance(candidate, dict) and "channels" in candidate:
+        payload = candidate
+if payload is None:
     raise SystemExit(1)
-payload = json.loads(raw[start:])
 print(payload["channels"]["whatsapp"]["self"]["e164"])
 PY
       then
@@ -479,6 +488,34 @@ state_dir, main_session, agent_id, target_path = sys.argv[1:5]
 tool_calls = {}
 child_session_key = None
 
+def resolve_session_file(state_dir: str, requested_agent_id: str, child_session_key: str) -> str:
+    state_path = pathlib.Path(state_dir)
+    candidates = []
+    parts = child_session_key.split(":")
+    if len(parts) >= 2 and parts[0] == "agent":
+        candidates.append(parts[1])
+    candidates.append(requested_agent_id)
+    for agent in candidates:
+        if not agent:
+            continue
+        sessions_index = state_path / "agents" / agent / "sessions" / "sessions.json"
+        if not sessions_index.is_file():
+            continue
+        with open(sessions_index, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+        entry = data.get(child_session_key) or {}
+        session_file = entry.get("sessionFile")
+        if session_file:
+            return session_file
+    for sessions_index in state_path.glob("agents/*/sessions/sessions.json"):
+        with open(sessions_index, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+        entry = data.get(child_session_key) or {}
+        session_file = entry.get("sessionFile")
+        if session_file:
+            return session_file
+    return ""
+
 with open(main_session, "r", encoding="utf-8") as handle:
     for raw_line in handle:
         raw_line = raw_line.strip()
@@ -492,7 +529,9 @@ with open(main_session, "r", encoding="utf-8") as handle:
                 if item.get("type") != "toolCall" or item.get("name") != "sessions_spawn":
                     continue
                 arguments = item.get("arguments") or {}
-                if arguments.get("agentId") == agent_id and target_path in (arguments.get("task") or ""):
+                task = arguments.get("task") or ""
+                agent_matches = arguments.get("agentId") == agent_id
+                if target_path in task and (agent_matches or not arguments.get("agentId")):
                     tool_calls[item.get("id")] = True
         elif role == "toolResult" and message.get("toolName") == "sessions_spawn":
             tool_call_id = message.get("toolCallId")
@@ -504,15 +543,7 @@ if not child_session_key:
     print("")
     raise SystemExit(0)
 
-sessions_index = pathlib.Path(state_dir) / "agents" / agent_id / "sessions" / "sessions.json"
-if not sessions_index.is_file():
-    print("")
-    raise SystemExit(0)
-
-with open(sessions_index, "r", encoding="utf-8") as handle:
-    data = json.load(handle)
-entry = data.get(child_session_key) or {}
-print(entry.get("sessionFile", ""))
+print(resolve_session_file(state_dir, agent_id, child_session_key))
 PY
 }
 
@@ -529,6 +560,34 @@ start_line = int(start_line_raw)
 tool_calls = {}
 child_session_key = None
 
+def resolve_session_file(state_dir: str, requested_agent_id: str, child_session_key: str) -> str:
+    state_path = pathlib.Path(state_dir)
+    candidates = []
+    parts = child_session_key.split(":")
+    if len(parts) >= 2 and parts[0] == "agent":
+        candidates.append(parts[1])
+    candidates.append(requested_agent_id)
+    for agent in candidates:
+        if not agent:
+            continue
+        sessions_index = state_path / "agents" / agent / "sessions" / "sessions.json"
+        if not sessions_index.is_file():
+            continue
+        with open(sessions_index, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+        entry = data.get(child_session_key) or {}
+        session_file = entry.get("sessionFile")
+        if session_file:
+            return session_file
+    for sessions_index in state_path.glob("agents/*/sessions/sessions.json"):
+        with open(sessions_index, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+        entry = data.get(child_session_key) or {}
+        session_file = entry.get("sessionFile")
+        if session_file:
+            return session_file
+    return ""
+
 with open(main_session, "r", encoding="utf-8") as handle:
     for index, raw_line in enumerate(handle, start=1):
         if index <= start_line:
@@ -544,7 +603,9 @@ with open(main_session, "r", encoding="utf-8") as handle:
                 if item.get("type") != "toolCall" or item.get("name") != "sessions_spawn":
                     continue
                 arguments = item.get("arguments") or {}
-                if arguments.get("agentId") == agent_id and target_path in (arguments.get("task") or ""):
+                task = arguments.get("task") or ""
+                agent_matches = arguments.get("agentId") == agent_id
+                if target_path in task and (agent_matches or not arguments.get("agentId")):
                     tool_calls[item.get("id")] = True
         elif role == "toolResult" and message.get("toolName") == "sessions_spawn":
             tool_call_id = message.get("toolCallId")
@@ -556,15 +617,7 @@ if not child_session_key:
     print("")
     raise SystemExit(0)
 
-sessions_index = pathlib.Path(state_dir) / "agents" / agent_id / "sessions" / "sessions.json"
-if not sessions_index.is_file():
-    print("")
-    raise SystemExit(0)
-
-with open(sessions_index, "r", encoding="utf-8") as handle:
-    data = json.load(handle)
-entry = data.get(child_session_key) or {}
-print(entry.get("sessionFile", ""))
+print(resolve_session_file(state_dir, agent_id, child_session_key))
 PY
 }
 

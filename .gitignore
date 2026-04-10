@@ -166,6 +166,9 @@ selftest-summary.json
 .local-human-whatsapp-conversation-eval.*/
 .local-human-whatsapp-conversation-eval/
 .local-agent-last-human-whatsapp-conversation-eval.json
+.local-human-whatsapp-resume-eval.*/
+.local-human-whatsapp-resume-eval/
+.local-agent-last-human-whatsapp-resume-eval.json
 .local-agent-intelligence-loop.*/
 .local-agent-intelligence-loop/
 .local-agent-last-intelligence-loop.json

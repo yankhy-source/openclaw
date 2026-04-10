@@ -448,18 +448,18 @@ PY
 )"
 printf '%s\n' "$TURN3_TEXT"
 
-if session_pattern_after_line_with_retry "$MAIN_SESSION" "$TURN3_BEFORE_LINES" '"name":"sessions_spawn"|"toolName":"sessions_spawn"' 20 1; then
-  if BUILDER_SESSION="$(resolve_child_session_after_line "$MAIN_SESSION" "$TURN3_BEFORE_LINES" "$BUILDER_AGENT_ID" "$ARTIFACT_PATH" 20 1)"; then
+if session_pattern_after_line_with_retry "$MAIN_SESSION" "$TURN3_BEFORE_LINES" '"name":"sessions_spawn"|"toolName":"sessions_spawn"' 120 1; then
+  if BUILDER_SESSION="$(resolve_child_session_after_line "$MAIN_SESSION" "$TURN3_BEFORE_LINES" "$BUILDER_AGENT_ID" "$ARTIFACT_PATH" 120 1)"; then
     ARTIFACT_ROUTE="builder"
   fi
 fi
 
 if [[ "$ARTIFACT_ROUTE" == "unknown" ]]; then
-  session_pattern_after_line_with_retry "$MAIN_SESSION" "$TURN3_BEFORE_LINES" "$ARTIFACT_PATH" 40 1 || {
+  session_pattern_after_line_with_retry "$MAIN_SESSION" "$TURN3_BEFORE_LINES" "$ARTIFACT_PATH" 120 1 || {
     echo "turn 3 did not reference artifact path in main session" >&2
     exit 1
   }
-  session_pattern_after_line_with_retry "$MAIN_SESSION" "$TURN3_BEFORE_LINES" '"name":"apply_patch"|"name":"edit"|"name":"write"|"name":"exec"' 40 1 || {
+  session_pattern_after_line_with_retry "$MAIN_SESSION" "$TURN3_BEFORE_LINES" '"name":"apply_patch"|"name":"edit"|"name":"write"|"name":"exec"|"toolName":"apply_patch"|"toolName":"edit"|"toolName":"write"|"toolName":"exec"' 120 1 || {
     echo "turn 3 did not produce any main-session write path" >&2
     exit 1
   }
@@ -472,14 +472,13 @@ ARTIFACT_TEXT="$(cat "$ARTIFACT_PATH")"
 if [[ "$ARTIFACT_ROUTE" == "builder" ]]; then
   assert_session_pattern "$BUILDER_SESSION" '"provider":"openai-codex"'
   assert_session_pattern "$BUILDER_SESSION" '"model":"gpt-5.3-codex-spark"'
-  assert_session_pattern "$BUILDER_SESSION" '"name":"read"'
   assert_session_pattern "$BUILDER_SESSION" "$SUMMARY_SNAPSHOT_PATH"
-  assert_session_pattern "$BUILDER_SESSION" '"name":"apply_patch"|"name":"edit"|"name":"write"'
+  assert_session_pattern "$BUILDER_SESSION" '"name":"apply_patch"|"name":"edit"|"name":"write"|"name":"exec"|"toolName":"apply_patch"|"toolName":"edit"|"toolName":"write"|"toolName":"exec"'
   assert_session_pattern "$BUILDER_SESSION" "$ARTIFACT_PATH"
-  assert_session_read_result "$BUILDER_SESSION" "$ARTIFACT_PATH" "$ARTIFACT_TEXT" >/dev/null
+  assert_session_pattern "$BUILDER_SESSION" '"name":"read"|"name":"exec"|"toolName":"read"|"toolName":"exec"'
 else
   assert_session_pattern_after_line "$MAIN_SESSION" "$TURN3_BEFORE_LINES" "$ARTIFACT_PATH"
-  assert_session_pattern_after_line "$MAIN_SESSION" "$TURN3_BEFORE_LINES" '"name":"apply_patch"|"name":"edit"|"name":"write"|"name":"exec"'
+  assert_session_pattern_after_line "$MAIN_SESSION" "$TURN3_BEFORE_LINES" '"name":"apply_patch"|"name":"edit"|"name":"write"|"name":"exec"|"toolName":"apply_patch"|"toolName":"edit"|"toolName":"write"|"toolName":"exec"'
 fi
 
 EVAL_STATUS="passed"

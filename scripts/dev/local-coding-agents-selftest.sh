@@ -135,10 +135,19 @@ import json, sys
 path, expected_provider, expected_model = sys.argv[1], sys.argv[2], sys.argv[3]
 with open(path, "r", encoding="utf-8") as handle:
     raw = handle.read()
-start = raw.find("{")
-if start < 0:
+decoder = json.JSONDecoder()
+payload = None
+for index, char in enumerate(raw):
+    if char != "{":
+        continue
+    try:
+        candidate, _ = decoder.raw_decode(raw[index:])
+    except json.JSONDecodeError:
+        continue
+    if isinstance(candidate, dict) and "result" in candidate:
+        payload = candidate
+if payload is None:
     raise SystemExit(f"{path}: missing JSON payload")
-payload = json.loads(raw[start:])
 meta = payload["result"]["meta"]["agentMeta"]
 provider = meta["provider"]
 model = meta["model"]

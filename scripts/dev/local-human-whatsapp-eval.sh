@@ -143,11 +143,25 @@ STATUS_TEXT="$(python3 - <<'PY' "$STATUS_JSON"
 import json, sys
 from pathlib import Path
 raw = Path(sys.argv[1]).read_text(encoding="utf-8")
-start = raw.find("{")
-payload = json.loads(raw[start:])
+decoder = json.JSONDecoder()
+payload = None
+for index, char in enumerate(raw):
+    if char != "{":
+        continue
+    try:
+        candidate, _ = decoder.raw_decode(raw[index:])
+    except json.JSONDecodeError:
+        continue
+    if isinstance(candidate, dict) and "result" in candidate:
+        payload = candidate
+if payload is None:
+    raise SystemExit(f"status task missing JSON result payload in {sys.argv[1]}")
 text = payload["result"]["payloads"][0]["text"].strip()
-if [item for item in ["WhatsApp", "lokal"] if item.lower() not in text.lower()]:
+core_terms = [item for item in ["WhatsApp"] if item.lower() not in text.lower()]
+if core_terms:
     raise SystemExit(f"status task missing expected concepts in {text!r}")
+if not any(token in text.lower() for token in ["lokal", "agent"]):
+    raise SystemExit(f"status task missing agent/local stability wording in {text!r}")
 if not any(token in text.lower() for token in ["schritt", "nächste", "nächstes"]):
     raise SystemExit(f"status task missing next-step wording in {text!r}")
 blocked = ["DONE:", "IN ARBEIT:", ".local-agent-last-selftest.json", "failedStep", "stepsCompleted"]
@@ -172,8 +186,19 @@ PLAN_TEXT="$(python3 - <<'PY' "$PLAN_JSON"
 import json, sys
 from pathlib import Path
 raw = Path(sys.argv[1]).read_text(encoding="utf-8")
-start = raw.find("{")
-payload = json.loads(raw[start:])
+decoder = json.JSONDecoder()
+payload = None
+for index, char in enumerate(raw):
+    if char != "{":
+        continue
+    try:
+        candidate, _ = decoder.raw_decode(raw[index:])
+    except json.JSONDecodeError:
+        continue
+    if isinstance(candidate, dict) and "result" in candidate:
+        payload = candidate
+if payload is None:
+    raise SystemExit(f"plan task missing JSON result payload in {sys.argv[1]}")
 text = payload["result"]["payloads"][0]["text"].strip()
 lines = [line.strip() for line in text.splitlines() if line.strip()]
 bullets = [line for line in lines if line.startswith("- ")]

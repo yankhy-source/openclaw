@@ -160,6 +160,19 @@ repo root. It tests a real three-turn WhatsApp conversation, reuses a marker
 from an earlier answer without restating it in the prompt, and proves that the
 agent can hand off an artifact-writing task to `oc-human-builder`.
 
+Run the interruption/resume WhatsApp eval:
+
+```bash
+PATH="${OPENCLAW_SELFTEST_NODE_BIN:-$HOME/.node22/current/bin}:$PATH" \
+pnpm qa:local-agents:human-whatsapp-resume-eval
+```
+
+That eval keeps its outputs under `.local-human-whatsapp-resume-eval/` and
+refreshes `.local-agent-last-human-whatsapp-resume-eval.json` in the repo root.
+It restarts the gateway between turns and then verifies that the agent can
+resume the live WhatsApp conversation by recalling the earlier marker and the
+next-step context without restating the marker in the prompt.
+
 Run the full research-backed intelligence loop:
 
 ```bash
@@ -172,6 +185,7 @@ That loop chains three roles:
 - generator-style human eval over the local agent stack
 - generator-style human eval over the live WhatsApp path
 - deeper multi-turn WhatsApp conversation eval with memory plus a delegated artifact
+- interruption/resume eval that forces a gateway restart between turns
 - separate evaluator review via `oc-selftest` that reads all summaries and writes one focused next upgrade step
 
 It persists run artifacts under `.local-agent-intelligence-loop/` and refreshes
@@ -312,8 +326,8 @@ command, so `claw-code-local summary` is not a stable probe.
 
 ## What the Intelligence Loop Verifies
 
-- the local human eval, live WhatsApp human eval, and deeper WhatsApp conversation eval all pass in the same cycle
-- a separate evaluator agent reads all three summaries plus the live selftest summary
+- the local human eval, live WhatsApp human eval, deeper WhatsApp conversation eval, and interruption/resume eval all pass in the same cycle
+- a separate evaluator agent reads all four summaries plus the live selftest summary
 - the evaluator writes a concise intelligence review and one focused next upgrade step
 - the review avoids leaking internal paths, JSON field names, or harness labels
 - the loop leaves behind a stable machine-readable summary for the latest full cycle
@@ -330,6 +344,7 @@ command, so `claw-code-local summary` is not a stable probe.
 - recent recovery-smoke runs stay green across the inspected history window
 - the latest human WhatsApp eval is green
 - the latest human WhatsApp conversation eval is green
+- the latest human WhatsApp resume eval is green
 - the latest selftest is still a passed live run
 - the most recent next-upgrade recommendation from the intelligence loop stays visible to automation and operators
 

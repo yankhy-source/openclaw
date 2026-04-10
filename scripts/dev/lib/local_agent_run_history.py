@@ -31,6 +31,8 @@ def is_incomplete_run(kind: str, payload: dict[str, Any]) -> bool:
             and not payload.get("turn3Text")
             and not payload.get("artifactText")
         )
+    if kind == "human_whatsapp_resume":
+        return not payload.get("turn1Text") and not payload.get("turn2Text")
     if kind == "recovery":
         return payload.get("humanWhatsappStatus") is None and not payload.get("humanWhatsappStatusText")
     if kind == "intelligence":
@@ -40,6 +42,7 @@ def is_incomplete_run(kind: str, payload: dict[str, Any]) -> bool:
             and payload.get("humanEvalStatus") == "passed"
             and payload.get("humanWhatsappEvalStatus") == "passed"
             and payload.get("humanWhatsappConversationStatus") in (None, "passed")
+            and payload.get("humanWhatsappResumeStatus") in (None, "passed")
             and not payload.get("reviewText")
             and not payload.get("nextUpgrade")
         )

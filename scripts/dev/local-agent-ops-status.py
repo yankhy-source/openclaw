@@ -27,6 +27,12 @@ def build_result(repo_root: Path, window: int) -> dict:
             repo_root / ".local-human-whatsapp-conversation-eval",
         )
     )
+    human_whatsapp_resume_base = Path(
+        os.environ.get(
+            "OPENCLAW_HUMAN_WHATSAPP_RESUME_EVAL_BASE",
+            repo_root / ".local-human-whatsapp-resume-eval",
+        )
+    )
     selftest_summary_path = Path(os.environ.get("OPENCLAW_SELFTEST_SUMMARY_PATH", repo_root / ".local-agent-last-selftest.json"))
     stress_recovery_summary_path = Path(
         os.environ.get("OPENCLAW_STRESS_RECOVERY_SMOKE_SUMMARY_PATH", repo_root / ".local-agent-last-stress-recovery-smoke.json")
@@ -39,6 +45,10 @@ def build_result(repo_root: Path, window: int) -> dict:
         human_whatsapp_conversation_base,
         "human_whatsapp_conversation",
     )
+    human_whatsapp_resume_runs, human_whatsapp_resume_skipped = load_run_summaries(
+        human_whatsapp_resume_base,
+        "human_whatsapp_resume",
+    )
     selftest = load_json(selftest_summary_path) if selftest_summary_path.exists() else None
     stress_recovery = load_json(stress_recovery_summary_path) if stress_recovery_summary_path.exists() else None
 
@@ -46,6 +56,7 @@ def build_result(repo_root: Path, window: int) -> dict:
     recovery_latest = latest_or_none(recovery_runs)
     human_whatsapp_latest = latest_or_none(human_whatsapp_runs)
     human_whatsapp_conversation_latest = latest_or_none(human_whatsapp_conversation_runs)
+    human_whatsapp_resume_latest = latest_or_none(human_whatsapp_resume_runs)
 
     problems: list[str] = []
     warnings: list[str] = []
@@ -73,6 +84,10 @@ def build_result(repo_root: Path, window: int) -> dict:
         problems.append("missing human-whatsapp-conversation summary")
     elif human_whatsapp_conversation_latest.get("status") != "passed":
         problems.append("latest human whatsapp conversation eval failed")
+    if not human_whatsapp_resume_latest:
+        problems.append("missing human-whatsapp-resume summary")
+    elif human_whatsapp_resume_latest.get("status") != "passed":
+        problems.append("latest human whatsapp resume eval failed")
     if stress_recovery and stress_recovery.get("status") != "passed":
         problems.append("latest stress-recovery smoke failed")
 
@@ -82,6 +97,9 @@ def build_result(repo_root: Path, window: int) -> dict:
     recent_human_whatsapp_conversation_failures = sum(
         1 for item in human_whatsapp_conversation_runs[:window] if item.get("status") != "passed"
     )
+    recent_human_whatsapp_resume_failures = sum(
+        1 for item in human_whatsapp_resume_runs[:window] if item.get("status") != "passed"
+    )
     if recent_intelligence_failures:
         warnings.append("recent intelligence-loop history contains failures")
     if recent_recovery_failures:
@@ -90,6 +108,8 @@ def build_result(repo_root: Path, window: int) -> dict:
         warnings.append("recent human-whatsapp history contains failures")
     if recent_human_whatsapp_conversation_failures:
         warnings.append("recent human-whatsapp-conversation history contains failures")
+    if recent_human_whatsapp_resume_failures:
+        warnings.append("recent human-whatsapp-resume history contains failures")
 
     next_upgrade = intelligence_latest.get("nextUpgrade") if intelligence_latest else None
     if stress_recovery and stress_recovery.get("status") == "passed":
@@ -140,6 +160,15 @@ def build_result(repo_root: Path, window: int) -> dict:
             "recentFailCount": recent_human_whatsapp_conversation_failures,
             "skippedCount": human_whatsapp_conversation_skipped,
         },
+        "humanWhatsappResume": {
+            "status": human_whatsapp_resume_latest.get("status") if human_whatsapp_resume_latest else None,
+            "finishedAt": human_whatsapp_resume_latest.get("finishedAt") if human_whatsapp_resume_latest else None,
+            "ageSeconds": age_seconds(human_whatsapp_resume_latest.get("finishedAt"))
+            if human_whatsapp_resume_latest
+            else None,
+            "recentFailCount": recent_human_whatsapp_resume_failures,
+            "skippedCount": human_whatsapp_resume_skipped,
+        },
         "stressRecovery": {
             "status": stress_recovery.get("status") if stress_recovery else None,
             "finishedAt": stress_recovery.get("finishedAt") if stress_recovery else None,
@@ -171,7 +200,8 @@ def main() -> int:
     else:
         print(
             "ops status={status} selftest={selftest_status}/{selftest_mode} intelligence={intelligence_status} "
-            "recovery={recovery_status} humanWhatsapp={human_status} humanConversation={human_conversation_status} stressRecovery={stress_status}".format(
+            "recovery={recovery_status} humanWhatsapp={human_status} humanConversation={human_conversation_status} "
+            "humanResume={human_resume_status} stressRecovery={stress_status}".format(
                 status=result["status"],
                 selftest_status=result["selftest"]["status"],
                 selftest_mode=result["selftest"]["mode"],
@@ -179,6 +209,7 @@ def main() -> int:
                 recovery_status=result["recovery"]["status"],
                 human_status=result["humanWhatsapp"]["status"],
                 human_conversation_status=result["humanWhatsappConversation"]["status"],
+                human_resume_status=result["humanWhatsappResume"]["status"],
                 stress_status=result["stressRecovery"]["status"] or "missing",
             )
         )
@@ -186,12 +217,13 @@ def main() -> int:
             print(f"whatsappToken={result['selftest']['whatsappToken']}")
         print(
             "ages selftest={selftest_age} intelligence={intelligence_age} recovery={recovery_age} "
-            "humanWhatsapp={human_age} humanConversation={human_conversation_age} stressRecovery={stress_age}".format(
+            "humanWhatsapp={human_age} humanConversation={human_conversation_age} humanResume={human_resume_age} stressRecovery={stress_age}".format(
                 selftest_age=result["selftest"]["ageSeconds"],
                 intelligence_age=result["intelligence"]["ageSeconds"],
                 recovery_age=result["recovery"]["ageSeconds"],
                 human_age=result["humanWhatsapp"]["ageSeconds"],
                 human_conversation_age=result["humanWhatsappConversation"]["ageSeconds"],
+                human_resume_age=result["humanWhatsappResume"]["ageSeconds"],
                 stress_age=result["stressRecovery"]["ageSeconds"],
             )
         )

@@ -23,6 +23,12 @@ def build_result(repo_root: Path, window: int) -> dict:
             repo_root / ".local-human-whatsapp-conversation-eval",
         )
     )
+    human_whatsapp_resume_base = Path(
+        os.environ.get(
+            "OPENCLAW_HUMAN_WHATSAPP_RESUME_EVAL_BASE",
+            repo_root / ".local-human-whatsapp-resume-eval",
+        )
+    )
     selftest_summary_path = Path(os.environ.get("OPENCLAW_SELFTEST_SUMMARY_PATH", repo_root / ".local-agent-last-selftest.json"))
 
     intelligence_runs, intelligence_skipped = load_run_summaries(intelligence_base, "intelligence")
@@ -31,6 +37,10 @@ def build_result(repo_root: Path, window: int) -> dict:
     human_whatsapp_conversation_runs, human_whatsapp_conversation_skipped = load_run_summaries(
         human_whatsapp_conversation_base,
         "human_whatsapp_conversation",
+    )
+    human_whatsapp_resume_runs, human_whatsapp_resume_skipped = load_run_summaries(
+        human_whatsapp_resume_base,
+        "human_whatsapp_resume",
     )
     selftest = load_json(selftest_summary_path) if selftest_summary_path.exists() else None
 
@@ -41,6 +51,11 @@ def build_result(repo_root: Path, window: int) -> dict:
         human_whatsapp_conversation_runs,
         window,
         human_whatsapp_conversation_skipped,
+    )
+    human_whatsapp_resume = summarize_window(
+        human_whatsapp_resume_runs,
+        window,
+        human_whatsapp_resume_skipped,
     )
 
     problems: list[str] = []
@@ -63,6 +78,10 @@ def build_result(repo_root: Path, window: int) -> dict:
         problems.append("no human-whatsapp-conversation history")
     elif human_whatsapp_conversation["latest"].get("status") != "passed":
         problems.append("latest human whatsapp conversation eval failed")
+    if human_whatsapp_resume["latest"] is None:
+        problems.append("no human-whatsapp-resume history")
+    elif human_whatsapp_resume["latest"].get("status") != "passed":
+        problems.append("latest human whatsapp resume eval failed")
     if intelligence["failCount"] > 0:
         warnings.append("recent intelligence-loop history contains failures")
     if recovery["failCount"] > 0:
@@ -71,6 +90,8 @@ def build_result(repo_root: Path, window: int) -> dict:
         warnings.append("recent human-whatsapp history contains failures")
     if human_whatsapp_conversation["failCount"] > 0:
         warnings.append("recent human-whatsapp-conversation history contains failures")
+    if human_whatsapp_resume["failCount"] > 0:
+        warnings.append("recent human-whatsapp-resume history contains failures")
 
     return {
         "summaryVersion": 1,
@@ -90,6 +111,7 @@ def build_result(repo_root: Path, window: int) -> dict:
         "recovery": recovery,
         "humanWhatsapp": human_whatsapp,
         "humanWhatsappConversation": human_whatsapp_conversation,
+        "humanWhatsappResume": human_whatsapp_resume,
     }
 
 
@@ -116,10 +138,12 @@ def main() -> int:
         recovery = result["recovery"]
         human_whatsapp = result["humanWhatsapp"]
         human_whatsapp_conversation = result["humanWhatsappConversation"]
+        human_whatsapp_resume = result["humanWhatsappResume"]
         print(
             "trend status={status} window={window} selftest={selftest_status}/{selftest_mode} "
             "intelligenceLatest={intelligence_latest} recoveryLatest={recovery_latest} "
-            "humanWhatsappLatest={human_latest} humanConversationLatest={human_conversation_latest}".format(
+            "humanWhatsappLatest={human_latest} humanConversationLatest={human_conversation_latest} "
+            "humanResumeLatest={human_resume_latest}".format(
                 status=result["status"],
                 window=result["window"],
                 selftest_status=result["selftest"]["status"],
@@ -128,6 +152,7 @@ def main() -> int:
                 recovery_latest=(recovery["latest"] or {}).get("status"),
                 human_latest=(human_whatsapp["latest"] or {}).get("status"),
                 human_conversation_latest=(human_whatsapp_conversation["latest"] or {}).get("status"),
+                human_resume_latest=(human_whatsapp_resume["latest"] or {}).get("status"),
             )
         )
         if result["selftest"]["whatsappToken"]:
@@ -147,6 +172,14 @@ def main() -> int:
                 fail_count=human_whatsapp_conversation["failCount"],
                 total=human_whatsapp_conversation["count"],
                 skipped=human_whatsapp_conversation["skippedCount"],
+            )
+        )
+        print(
+            "humanResume passCount={pass_count} failCount={fail_count} total={total} skipped={skipped}".format(
+                pass_count=human_whatsapp_resume["passCount"],
+                fail_count=human_whatsapp_resume["failCount"],
+                total=human_whatsapp_resume["count"],
+                skipped=human_whatsapp_resume["skippedCount"],
             )
         )
         latest_intelligence = intelligence["latest"] or {}
