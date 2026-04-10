@@ -152,6 +152,7 @@ analysis/
 extensions/qa-lab/web/dist/
 .local-agent-selftest.*/
 .local-agent-last-selftest.json
+selftest-summary.json
 .local-agent-task-smoke.*/
 .local-main-orchestrator-smoke.*/
 .local-main-routing-smoke.*/
@@ -162,6 +163,9 @@ extensions/qa-lab/web/dist/
 .local-human-whatsapp-eval.*/
 .local-human-whatsapp-eval/
 .local-agent-last-human-whatsapp-eval.json
+.local-human-whatsapp-conversation-eval.*/
+.local-human-whatsapp-conversation-eval/
+.local-agent-last-human-whatsapp-conversation-eval.json
 .local-agent-intelligence-loop.*/
 .local-agent-intelligence-loop/
 .local-agent-last-intelligence-loop.json

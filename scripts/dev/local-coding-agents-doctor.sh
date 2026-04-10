@@ -204,7 +204,7 @@ if isinstance(config, dict):
         "oc-builder": {"workspace": str(repo_root), "model": main_primary_model, "fallbacks": main_fallbacks},
         "oc-github": {"workspace": str(repo_root), "model": main_primary_model, "fallbacks": main_fallbacks},
         "claw-code": {"workspace": str(parity_root), "model": main_primary_model, "fallbacks": main_fallbacks},
-        "oc-human-main": {"workspace": str(repo_root), "model": main_primary_model, "fallbacks": main_fallbacks},
+        "oc-human-main": {"workspace": str(repo_root), "model": main_primary_model, "fallbacks": main_fallbacks, "subagents_model": main_primary_model, "allow_agents": ["oc-human-builder"]},
         "oc-human-builder": {"workspace": str(repo_root), "model": main_primary_model, "fallbacks": main_fallbacks},
     }
     report["checks"]["agents"] = {}

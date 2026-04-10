@@ -232,6 +232,10 @@ function mutateConfig(config) {
         theme: "Fresh user-facing local operator answers",
         emoji: "🧭",
       },
+      subagents: {
+        model: mainPrimaryModel,
+        allowAgents: ["oc-human-builder"],
+      },
       tools: {
         profile: "coding",
         fs: {

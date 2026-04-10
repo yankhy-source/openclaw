@@ -147,6 +147,19 @@ That live eval keeps its outputs under `.local-human-whatsapp-eval/` and refresh
 real live WhatsApp path through the fresh dedicated `oc-human-main` profile and
 first ensures there is a fresh enough live selftest summary available.
 
+Run the harder multi-turn live WhatsApp conversation eval:
+
+```bash
+PATH="${OPENCLAW_SELFTEST_NODE_BIN:-$HOME/.node22/current/bin}:$PATH" \
+pnpm qa:local-agents:human-whatsapp-conversation-eval
+```
+
+That eval keeps its outputs under `.local-human-whatsapp-conversation-eval/`
+and refreshes `.local-agent-last-human-whatsapp-conversation-eval.json` in the
+repo root. It tests a real three-turn WhatsApp conversation, reuses a marker
+from an earlier answer without restating it in the prompt, and proves that the
+agent can hand off an artifact-writing task to `oc-human-builder`.
+
 Run the full research-backed intelligence loop:
 
 ```bash
@@ -158,7 +171,8 @@ That loop chains three roles:
 
 - generator-style human eval over the local agent stack
 - generator-style human eval over the live WhatsApp path
-- separate evaluator review via `oc-selftest` that reads both summaries and writes one focused next upgrade step
+- deeper multi-turn WhatsApp conversation eval with memory plus a delegated artifact
+- separate evaluator review via `oc-selftest` that reads all summaries and writes one focused next upgrade step
 
 It persists run artifacts under `.local-agent-intelligence-loop/` and refreshes
 `.local-agent-last-intelligence-loop.json` in the repo root. Each run also keeps
@@ -298,8 +312,8 @@ command, so `claw-code-local summary` is not a stable probe.
 
 ## What the Intelligence Loop Verifies
 
-- the local human eval and live WhatsApp human eval both pass in the same cycle
-- a separate evaluator agent reads both summaries plus the live selftest summary
+- the local human eval, live WhatsApp human eval, and deeper WhatsApp conversation eval all pass in the same cycle
+- a separate evaluator agent reads all three summaries plus the live selftest summary
 - the evaluator writes a concise intelligence review and one focused next upgrade step
 - the review avoids leaking internal paths, JSON field names, or harness labels
 - the loop leaves behind a stable machine-readable summary for the latest full cycle
@@ -315,6 +329,7 @@ command, so `claw-code-local summary` is not a stable probe.
 - recent intelligence-loop runs stay green across the inspected history window
 - recent recovery-smoke runs stay green across the inspected history window
 - the latest human WhatsApp eval is green
+- the latest human WhatsApp conversation eval is green
 - the latest selftest is still a passed live run
 - the most recent next-upgrade recommendation from the intelligence loop stays visible to automation and operators
 

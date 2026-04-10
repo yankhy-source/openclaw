@@ -11,12 +11,22 @@ run_json_assert() {
   python3 - <<'PY' "$json_path" "$expected"
 import json, sys
 path, expected = sys.argv[1], sys.argv[2]
+decoder = json.JSONDecoder()
+best = None
 with open(path, "r", encoding="utf-8") as handle:
     raw = handle.read()
-start = raw.find("{")
-if start < 0:
+for index, char in enumerate(raw):
+    if char != "{":
+        continue
+    try:
+        candidate, _ = decoder.raw_decode(raw[index:])
+    except json.JSONDecodeError:
+        continue
+    if isinstance(candidate, dict) and "result" in candidate:
+        best = candidate
+if best is None:
     raise SystemExit(f"{path}: missing JSON payload")
-payload = json.loads(raw[start:])
+payload = best
 text = payload["result"]["payloads"][0]["text"]
 first_line = text.splitlines()[0] if text else ""
 if text != expected and first_line != expected:
@@ -30,13 +40,19 @@ json_payload_has_result() {
   python3 - <<'PY' "$json_path"
 import json, sys
 path = sys.argv[1]
+decoder = json.JSONDecoder()
 with open(path, "r", encoding="utf-8") as handle:
     raw = handle.read()
-start = raw.find("{")
-if start < 0:
-    raise SystemExit(1)
-payload = json.loads(raw[start:])
-raise SystemExit(0 if "result" in payload else 1)
+for index, char in enumerate(raw):
+    if char != "{":
+        continue
+    try:
+        candidate, _ = decoder.raw_decode(raw[index:])
+    except json.JSONDecodeError:
+        continue
+    if isinstance(candidate, dict) and "result" in candidate:
+        raise SystemExit(0)
+raise SystemExit(1)
 PY
 }
 
@@ -367,14 +383,23 @@ workspace_mirror_file() {
   local suffix="${3:-$(basename "$source_path")}"
   local mirror_dir="${STATE_DIR}/workspace/.local-agent-mirrors"
   local target_path=""
-  local extension=""
 
   mkdir -p "$mirror_dir"
-  if [[ "$suffix" == *.* ]]; then
-    extension=".${suffix##*.}"
-  fi
+  target_path="$(python3 - <<'PY' "$mirror_dir" "$prefix" "$suffix"
+import os
+import sys
+import tempfile
 
-  target_path="$(mktemp "$mirror_dir/${prefix}.XXXXXX${extension}")"
+mirror_dir, prefix, suffix = sys.argv[1:4]
+if suffix and "." in suffix:
+    extension = "." + suffix.rsplit(".", 1)[1]
+else:
+    extension = ""
+fd, path = tempfile.mkstemp(prefix=f"{prefix}.", suffix=extension, dir=mirror_dir)
+os.close(fd)
+print(path)
+PY
+)"
   cp "$source_path" "$target_path"
   printf '%s\n' "$target_path"
 }

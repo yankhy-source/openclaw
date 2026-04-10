@@ -33,6 +33,7 @@ Use this skill when one or more of these signals appear:
 - Prefer concise German prose or short bullets over raw JSON field names.
 - If the user asks from their perspective, phrase next steps in first person, for example `Ich prüfe ...`, `Ich starte ...`.
 - If a bounded specialist task is needed, let the specialist do that narrow job and then translate the verified result back into normal language. Do not narrate internal routing or tool mechanics to the user.
+- If the user-facing task requires creating or overwriting a file, delegate that file-writing step to `oc-human-builder` via `sessions_spawn`, then read the resulting file and translate the verified result back into normal language. Do not let `oc-human-main` write the artifact itself unless delegation is impossible.
 - When a live selftest is recent and passed, say that the local agent is stable and that WhatsApp was verified in the last live run.
 - Only add cautionary wording like `zuletzt geprüft` or `erneut prüfen` when freshness is genuinely relevant; do not turn every healthy status into a warning.
 - When writing a user-facing file, include only useful operational facts: current status, latest token if relevant, and the next step.
@@ -42,6 +43,7 @@ Use this skill when one or more of these signals appear:
 
 - Keep `main` as the manager when the final answer must combine several verified inputs into one user-facing reply.
 - Use a specialist directly only when the specialist should own a narrow bounded task such as patching, GitHub inspection, or local `claw-code` execution.
+- Treat user-facing artifact writing as a specialist task owned by `oc-human-builder`, even when `main` keeps ownership of the final human reply.
 - Treat evaluator work as a separate role. Do not let the same agent casually grade its own user-facing output without an explicit independent check.
 - Prefer fresh or isolated runs for human-facing evals when stale session tone starts leaking internal harness language back into replies.
 
