@@ -159,3 +159,15 @@ extensions/qa-lab/web/dist/
 .local-human-eval.*/
 .local-human-eval/
 .local-agent-last-human-eval.json
+.local-human-whatsapp-eval.*/
+.local-human-whatsapp-eval/
+.local-agent-last-human-whatsapp-eval.json
+.local-agent-intelligence-loop.*/
+.local-agent-intelligence-loop/
+.local-agent-last-intelligence-loop.json
+.local-agent-recovery-smoke.*/
+.local-agent-recovery-smoke/
+.local-agent-last-recovery-smoke.json
+.local-agent-stress-recovery-smoke.*/
+.local-agent-stress-recovery-smoke/
+.local-agent-last-stress-recovery-smoke.json

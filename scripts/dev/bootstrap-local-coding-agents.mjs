@@ -20,6 +20,10 @@ const mainFallbackModels = [
   "groq/deepseek-r1-distill-llama-70b",
   "google-gemini/gemini-2.0-flash",
 ];
+const specialistModel = {
+  primary: mainPrimaryModel,
+  fallbacks: [...mainFallbackModels],
+};
 
 const sharedPathPrepend = [
   path.join(repoRoot, "scripts", "dev"),
@@ -29,6 +33,7 @@ const sharedPathPrepend = [
 ];
 
 const agentIds = ["oc-builder", "oc-github", "claw-code"];
+const humanEvalAgentIds = ["oc-human-main", "oc-human-builder"];
 
 await ensureExists(path.dirname(configPath), "OpenClaw config directory");
 await ensureExists(parityRoot, "claw-code parity repository");
@@ -44,7 +49,7 @@ const summary = {
   sharedSkills: sharedSkillIds.map((id) => path.join(sharedSkillsRoot, id)),
   repoRoot,
   parityRoot,
-  agentIds,
+  agentIds: [...agentIds, ...humanEvalAgentIds],
 };
 console.log(JSON.stringify(summary, null, 2));
 
@@ -103,14 +108,52 @@ function mutateConfig(config) {
   config.tools ??= {};
   config.tools.agentToAgent ??= {};
   config.agents.defaults.subagents ??= {};
+  config.agents.defaults.sandbox ??= {};
+  config.agents.defaults.sandbox.mode = "off";
   config.agents.defaults.subagents.model = mainPrimaryModel;
+  config.tools.deny = Array.isArray(config.tools.deny)
+    ? config.tools.deny.filter(
+        (entry) => !["group:fs", "group:runtime", "group:web"].includes(String(entry).trim()),
+      )
+    : config.tools.deny;
 
   const desiredAgents = [
+    {
+      id: "oc-selftest",
+      name: "OpenClaw Selftest",
+      workspace: repoRoot,
+      model: {
+        primary: specialistModel.primary,
+        fallbacks: [...specialistModel.fallbacks],
+      },
+      skills: ["main-tool-discipline", "session-logs"],
+      identity: {
+        name: "OpenClaw Selftest",
+        theme: "Isolated orchestration for local agent QA",
+        emoji: "🧪",
+      },
+      subagents: {
+        model: mainPrimaryModel,
+        allowAgents: [...agentIds],
+      },
+      tools: {
+        profile: "coding",
+        fs: {
+          workspaceOnly: true,
+        },
+        exec: {
+          pathPrepend: sharedPathPrepend,
+        },
+      },
+    },
     {
       id: "oc-builder",
       name: "OpenClaw Builder",
       workspace: repoRoot,
-      model: "openai-codex/gpt-5.3-codex-spark",
+      model: {
+        primary: specialistModel.primary,
+        fallbacks: [...specialistModel.fallbacks],
+      },
       skills: ["claw-code-local", "coding-agent", "github", "session-logs"],
       identity: {
         name: "OpenClaw Builder",
@@ -118,6 +161,10 @@ function mutateConfig(config) {
         emoji: "🛠️",
       },
       tools: {
+        profile: "coding",
+        fs: {
+          workspaceOnly: true,
+        },
         exec: {
           pathPrepend: sharedPathPrepend,
         },
@@ -127,7 +174,10 @@ function mutateConfig(config) {
       id: "oc-github",
       name: "OpenClaw GitHub",
       workspace: repoRoot,
-      model: "openai-codex/gpt-5.3-codex-spark",
+      model: {
+        primary: specialistModel.primary,
+        fallbacks: [...specialistModel.fallbacks],
+      },
       skills: ["github", "session-logs", "claw-code-local"],
       identity: {
         name: "OpenClaw GitHub",
@@ -135,6 +185,10 @@ function mutateConfig(config) {
         emoji: "🐙",
       },
       tools: {
+        profile: "coding",
+        fs: {
+          workspaceOnly: true,
+        },
         exec: {
           pathPrepend: sharedPathPrepend,
         },
@@ -144,7 +198,10 @@ function mutateConfig(config) {
       id: "claw-code",
       name: "claw-code",
       workspace: parityRoot,
-      model: "openai-codex/gpt-5.3-codex-spark",
+      model: {
+        primary: specialistModel.primary,
+        fallbacks: [...specialistModel.fallbacks],
+      },
       skills: ["claw-code-local", "session-logs"],
       identity: {
         name: "claw-code",
@@ -152,6 +209,58 @@ function mutateConfig(config) {
         emoji: "🦞",
       },
       tools: {
+        profile: "coding",
+        fs: {
+          workspaceOnly: true,
+        },
+        exec: {
+          pathPrepend: sharedPathPrepend,
+        },
+      },
+    },
+    {
+      id: "oc-human-main",
+      name: "OpenClaw Human Main",
+      workspace: repoRoot,
+      model: {
+        primary: specialistModel.primary,
+        fallbacks: [...specialistModel.fallbacks],
+      },
+      skills: ["main-tool-discipline", "main-human-operator", "session-logs"],
+      identity: {
+        name: "OpenClaw Human Main",
+        theme: "Fresh user-facing local operator answers",
+        emoji: "🧭",
+      },
+      tools: {
+        profile: "coding",
+        fs: {
+          workspaceOnly: true,
+        },
+        exec: {
+          pathPrepend: sharedPathPrepend,
+        },
+      },
+    },
+    {
+      id: "oc-human-builder",
+      name: "OpenClaw Human Builder",
+      workspace: repoRoot,
+      model: {
+        primary: specialistModel.primary,
+        fallbacks: [...specialistModel.fallbacks],
+      },
+      skills: ["claw-code-local", "coding-agent", "main-human-operator", "session-logs"],
+      identity: {
+        name: "OpenClaw Human Builder",
+        theme: "Fresh user-facing artifact generation",
+        emoji: "📝",
+      },
+      tools: {
+        profile: "coding",
+        fs: {
+          workspaceOnly: true,
+        },
         exec: {
           pathPrepend: sharedPathPrepend,
         },
@@ -164,7 +273,7 @@ function mutateConfig(config) {
   }
 
   const allow = Array.isArray(config.tools.agentToAgent.allow) ? config.tools.agentToAgent.allow : [];
-  config.tools.agentToAgent.allow = uniqueStrings([...allow, ...agentIds]);
+  config.tools.agentToAgent.allow = uniqueStrings([...allow, "oc-selftest", ...agentIds, ...humanEvalAgentIds]);
 
   const mainAgent = config.agents.list.find((entry) => entry && entry.id === "main");
   if (mainAgent) {
@@ -179,6 +288,10 @@ function mutateConfig(config) {
     const allowAgents = Array.isArray(mainAgent.subagents.allowAgents) ? mainAgent.subagents.allowAgents : [];
     mainAgent.subagents.allowAgents = uniqueStrings([...allowAgents, ...agentIds]);
     mainAgent.tools = mergeTools(mainAgent.tools, {
+      profile: "coding",
+      fs: {
+        workspaceOnly: true,
+      },
       exec: {
         pathPrepend: sharedPathPrepend,
       },
@@ -216,6 +329,11 @@ function mergeTools(existing, incoming) {
   return {
     ...existing,
     ...incoming,
+    profile: incoming.profile ?? existing.profile,
+    fs: {
+      ...(existing.fs ?? {}),
+      ...(incoming.fs ?? {}),
+    },
     exec: {
       ...(existing.exec ?? {}),
       ...(incoming.exec ?? {}),

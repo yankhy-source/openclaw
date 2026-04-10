@@ -8,20 +8,21 @@ NODE22_BIN="${OPENCLAW_SELFTEST_NODE_BIN:-$HOME/.node22/current/bin}"
 SUMMARY_PATH="${OPENCLAW_SELFTEST_SUMMARY_PATH:-$REPO_ROOT/.local-agent-last-selftest.json}"
 HUMAN_EVAL_BASE="${OPENCLAW_HUMAN_EVAL_BASE:-$REPO_ROOT/.local-human-eval}"
 HUMAN_EVAL_SUMMARY_PATH="${OPENCLAW_HUMAN_EVAL_SUMMARY_PATH:-$REPO_ROOT/.local-agent-last-human-eval.json}"
+MAIN_AGENT_ID="${OPENCLAW_HUMAN_MAIN_AGENT_ID:-oc-human-main}"
+BUILDER_AGENT_ID="${OPENCLAW_HUMAN_BUILDER_AGENT_ID:-oc-human-builder}"
 EVAL_ROOT=""
+EVAL_SUMMARY_SNAPSHOT=""
 Q1_JSON="$EVAL_ROOT/human-status.json"
 Q2_JSON="$EVAL_ROOT/human-plan.json"
 Q3_JSON="$EVAL_ROOT/human-artifact.json"
 ARTIFACT_PATH="$EVAL_ROOT/team-update.md"
 BOOTSTRAP_SCRIPT="$SCRIPT_DIR/bootstrap-local-coding-agents.mjs"
-DOCTOR_SCRIPT="$SCRIPT_DIR/local-coding-agents-doctor.sh"
 ENSURE_SCRIPT="$SCRIPT_DIR/local-coding-agents-ensure.sh"
 EVAL_STARTED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 EVAL_STATUS="failed"
 EVAL_FAILED_COMMAND=""
 EVAL_TASK1_TEXT=""
 EVAL_TASK2_TEXT=""
-MAIN_SESSION_ID="local-human-eval-$(date +%s)-$$"
 
 if [[ -d "$NODE22_BIN" ]]; then
   PATH="$NODE22_BIN:$PATH"
@@ -33,6 +34,7 @@ export PATH
 
 mkdir -p "$HUMAN_EVAL_BASE"
 EVAL_ROOT="$(mktemp -d "$HUMAN_EVAL_BASE/run.XXXXXX")"
+EVAL_SUMMARY_SNAPSHOT="$EVAL_ROOT/selftest-summary.json"
 Q1_JSON="$EVAL_ROOT/human-status.json"
 Q2_JSON="$EVAL_ROOT/human-plan.json"
 Q3_JSON="$EVAL_ROOT/human-artifact.json"
@@ -43,7 +45,13 @@ source "$SCRIPT_DIR/lib/openclaw-smoke-common.sh"
 run_main_agent_json() {
   local output_path="$1"
   shift
-  run_openclaw_agent_json "$output_path" --agent main --session-id "$MAIN_SESSION_ID" --thinking medium "$@"
+  run_openclaw_agent_json "$output_path" --agent "$MAIN_AGENT_ID" --thinking medium "$@"
+}
+
+run_builder_agent_json() {
+  local output_path="$1"
+  shift
+  run_openclaw_agent_json "$output_path" --agent "$BUILDER_AGENT_ID" --thinking medium "$@"
 }
 
 on_error() {
@@ -61,6 +69,7 @@ write_eval_summary() {
   fi
   python3 - <<'PY' \
     "$HUMAN_EVAL_SUMMARY_PATH" \
+    "$EVAL_ROOT/summary.json" \
     "$EVAL_STATUS" \
     "$EVAL_STARTED_AT" \
     "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
@@ -75,29 +84,32 @@ write_eval_summary() {
     "$EVAL_TASK1_TEXT" \
     "$EVAL_TASK2_TEXT" \
     "$artifact_text" \
-    "$MAIN_SESSION_ID"
+    "$MAIN_AGENT_ID" \
+    "$BUILDER_AGENT_ID"
 import json, pathlib, sys
 
-summary_path = pathlib.Path(sys.argv[1])
+summary_paths = [pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])]
 payload = {
     "summaryVersion": 1,
-    "status": sys.argv[2],
-    "startedAt": sys.argv[3],
-    "finishedAt": sys.argv[4],
-    "repoRoot": sys.argv[5],
-    "evalRoot": sys.argv[6],
-    "selftestSummaryPath": sys.argv[7],
-    "task1Path": sys.argv[8],
-    "task2Path": sys.argv[9],
-    "task3Path": sys.argv[10],
-    "artifactPath": sys.argv[11],
-    "failedCommand": sys.argv[12] or None,
-    "task1Text": sys.argv[13] or None,
-    "task2Text": sys.argv[14] or None,
-    "artifactText": sys.argv[15] or None,
-    "mainSessionId": sys.argv[16] or None,
+    "status": sys.argv[3],
+    "startedAt": sys.argv[4],
+    "finishedAt": sys.argv[5],
+    "repoRoot": sys.argv[6],
+    "evalRoot": sys.argv[7],
+    "selftestSummaryPath": sys.argv[8],
+    "task1Path": sys.argv[9],
+    "task2Path": sys.argv[10],
+    "task3Path": sys.argv[11],
+    "artifactPath": sys.argv[12],
+    "failedCommand": sys.argv[13] or None,
+    "task1Text": sys.argv[14] or None,
+    "task2Text": sys.argv[15] or None,
+    "artifactText": sys.argv[16] or None,
+    "mainAgentId": sys.argv[17] or None,
+    "builderAgentId": sys.argv[18] or None,
 }
-summary_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+for summary_path in summary_paths:
+    summary_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 PY
 }
 
@@ -115,13 +127,28 @@ trap 'on_exit $?' EXIT
 echo "== bootstrap local coding agents =="
 node "$BOOTSTRAP_SCRIPT" >/dev/null
 
-echo "== ensure fresh live baseline =="
-bash "$DOCTOR_SCRIPT" --require-mode live --max-age-seconds 1800 >/dev/null 2>&1 || \
-  bash "$ENSURE_SCRIPT" --live --max-age-seconds 1800 >/dev/null
+echo "== ensure fresh live selftest =="
+bash "$ENSURE_SCRIPT" --live >/dev/null
+
+if [[ ! -f "$SUMMARY_PATH" ]]; then
+  echo "missing selftest summary at $SUMMARY_PATH" >&2
+  exit 1
+fi
+
+cp "$SUMMARY_PATH" "$EVAL_SUMMARY_SNAPSHOT"
 
 echo "== task 1: human status question =="
+MAIN_SESSION="$(agent_main_session_jsonl "$MAIN_AGENT_ID")"
+if [[ -z "$MAIN_SESSION" || ! -f "$MAIN_SESSION" ]]; then
+  MAIN_BEFORE_LINES=0
+else
+  MAIN_BEFORE_LINES="$(session_line_count "$MAIN_SESSION")"
+fi
 run_main_agent_json "$Q1_JSON" \
-  --message "Ich bin der Nutzer. Sag mir auf Deutsch in maximal 4 kurzen Sätzen: Läuft mein lokaler Agent gerade stabil, ist WhatsApp verbunden, und was ist der wichtigste nächste Schritt? Nutze read auf $SUMMARY_PATH, wenn du konkrete Aussagen machst. Sprich normal mit mir, nicht wie ein Testreport. Verwende keine Labels wie DONE, IN ARBEIT oder NÄCHSTER SCHRITT und nenne keine Dateinamen oder JSON-Feldnamen."
+  --message "Ich bin der Nutzer. Lies zuerst per read exakt $EVAL_SUMMARY_SNAPSHOT. Sag mir danach auf Deutsch in maximal 4 kurzen Sätzen: Läuft mein lokaler Agent gerade stabil, ist WhatsApp verbunden, und was ist der wichtigste nächste Schritt? Wenn der letzte Test fehlgeschlagen ist oder WhatsApp nicht belegt ist, sag das klar, aber normal. Sprich mit mir wie ein Operator, nicht wie ein Testreport. Verwende keine Labels wie DONE oder IN ARBEIT und nenne keine Dateinamen oder JSON-Feldnamen. Ohne echten read-Toolcall darfst du den Auftrag nicht abschließen."
+if [[ -z "$MAIN_SESSION" || ! -f "$MAIN_SESSION" ]]; then
+  MAIN_SESSION="$(wait_for_agent_main_session_jsonl "$MAIN_AGENT_ID" 40 1)"
+fi
 
 EVAL_TASK1_TEXT="$(python3 - <<'PY' "$Q1_JSON"
 import json, sys
@@ -132,8 +159,10 @@ payload = json.loads(raw[start:])
 text = payload["result"]["payloads"][0]["text"]
 checks = ["WhatsApp", "lokal", "nächste"]
 missing = [item for item in checks if item.lower() not in text.lower()]
-if missing:
-    raise SystemExit(f"task 1 missing expected concepts: {missing} in {text!r}")
+if [item for item in ["WhatsApp", "lokal"] if item.lower() not in text.lower()]:
+    raise SystemExit(f"task 1 missing expected concepts in {text!r}")
+if not any(token in text.lower() for token in ["schritt", "nächste", "nächstes"]):
+    raise SystemExit(f"task 1 missing next-step wording in {text!r}")
 blocked = ["DONE:", "IN ARBEIT:", "failedStep", "stepsCompleted", ".local-agent-last-selftest.json"]
 found_blocked = [item for item in blocked if item.lower() in text.lower()]
 if found_blocked:
@@ -145,8 +174,8 @@ print(text)
 PY
 )"
 printf '%s\n' "$EVAL_TASK1_TEXT"
-assert_latest_session_pattern "main" '"name":"read"'
-assert_latest_session_pattern "main" "$SUMMARY_PATH"
+wait_for_session_pattern_after_line "$MAIN_SESSION" "$MAIN_BEFORE_LINES" '"name":"read"'
+wait_for_session_pattern_after_line "$MAIN_SESSION" "$MAIN_BEFORE_LINES" "$EVAL_SUMMARY_SNAPSHOT"
 
 echo "== task 2: human next-action question =="
 run_main_agent_json "$Q2_JSON" \
@@ -172,18 +201,33 @@ PY
 printf '%s\n' "$EVAL_TASK2_TEXT"
 
 echo "== task 3: create user-facing artifact =="
-run_main_agent_json "$Q3_JSON" \
-  --message "Erstelle für mich eine kurze Team-Statusdatei unter $ARTIFACT_PATH. Inhalt: Überschrift, ein kurzer Abschnitt 'Live-Status', der aktuelle WhatsApp-Token und ein Abschnitt 'Nächster Schritt'. Schreib nutzerfreundlich auf Deutsch, ohne interne Testlabels, ohne DONE/IN ARBEIT und ohne rohe JSON-Feldnamen. Nutze sessions_spawn, wenn ein Spezialagent sinnvoll ist. Antworte exakt mit ARTIFACT_DONE."
+BUILDER_SESSION="$(agent_main_session_jsonl "$BUILDER_AGENT_ID")"
+if [[ -z "$BUILDER_SESSION" || ! -f "$BUILDER_SESSION" ]]; then
+  BUILDER_BEFORE_LINES=0
+else
+  BUILDER_BEFORE_LINES="$(session_line_count "$BUILDER_SESSION")"
+fi
+run_builder_agent_json "$Q3_JSON" \
+  --message "Lies zuerst per read exakt $EVAL_SUMMARY_SNAPSHOT. Erstelle oder überschreibe danach exakt die Datei $ARTIFACT_PATH. Inhalt: eine Markdown-Überschrift '# Team-Status', ein kurzer Abschnitt '## Live-Status' und ein kurzer Abschnitt '## Nächster Schritt'. Schreib nutzerfreundlich auf Deutsch, ohne interne Testlabels, ohne DONE/IN ARBEIT und ohne rohe JSON-Feldnamen. Wenn die JSON einen WhatsApp-Token enthält, nenne ihn als normalen Satz im Live-Status. Lies nach dem Schreiben die Datei $ARTIFACT_PATH noch einmal per read zur Verifikation. Antworte exakt mit ARTIFACT_DONE."
+if [[ -z "$BUILDER_SESSION" || ! -f "$BUILDER_SESSION" ]]; then
+  BUILDER_SESSION="$(wait_for_agent_main_session_jsonl "$BUILDER_AGENT_ID" 40 1)"
+fi
 
 run_json_assert "$Q3_JSON" "ARTIFACT_DONE" >/dev/null
+wait_for_session_pattern_after_line "$BUILDER_SESSION" "$BUILDER_BEFORE_LINES" '"name":"read"'
+wait_for_session_pattern_after_line "$BUILDER_SESSION" "$BUILDER_BEFORE_LINES" "$EVAL_SUMMARY_SNAPSHOT"
+wait_for_session_pattern_after_line "$BUILDER_SESSION" "$BUILDER_BEFORE_LINES" '"name":"apply_patch"|"name":"edit"|"name":"write"'
+wait_for_session_pattern_after_line "$BUILDER_SESSION" "$BUILDER_BEFORE_LINES" "$ARTIFACT_PATH"
 
-python3 - <<'PY' "$ARTIFACT_PATH" "$SUMMARY_PATH"
+python3 - <<'PY' "$ARTIFACT_PATH" "$EVAL_SUMMARY_SNAPSHOT"
 import json, sys
 from pathlib import Path
 artifact = Path(sys.argv[1]).read_text(encoding="utf-8")
 summary = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
-token = summary["whatsappToken"]
-required = ["# ", "Live-Status", token, "Nächster Schritt"]
+token = summary.get("whatsappToken")
+required = ["# Team-Status", "Live-Status", "Nächster Schritt"]
+if token:
+    required.append(token)
 missing = [item for item in required if item not in artifact]
 if missing:
     raise SystemExit(f"task 3 artifact missing {missing!r}")
@@ -201,5 +245,6 @@ printf 'status_answer=%s\n' "$Q1_JSON"
 printf 'next_steps_answer=%s\n' "$Q2_JSON"
 printf 'team_artifact=%s\n' "$ARTIFACT_PATH"
 printf 'human_eval_summary=%s\n' "$HUMAN_EVAL_SUMMARY_PATH"
-printf 'main_session_id=%s\n' "$MAIN_SESSION_ID"
+printf 'main_agent_id=%s\n' "$MAIN_AGENT_ID"
+printf 'builder_agent_id=%s\n' "$BUILDER_AGENT_ID"
 echo "== local human perspective eval passed =="

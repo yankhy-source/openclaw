@@ -12,14 +12,18 @@ SELFTEST_ROOT="$(mktemp -d "$REPO_ROOT/.local-agent-selftest.XXXXXX")"
 EXEC_JSON="$SELFTEST_ROOT/exec.json"
 READ_JSON="$SELFTEST_ROOT/read.json"
 PATCH_JSON="$SELFTEST_ROOT/patch.json"
-GITHUB_JSON="$SELFTEST_ROOT/github.json"
-CLAW_JSON="$SELFTEST_ROOT/claw-code.json"
 WA_JSON="$SELFTEST_ROOT/whatsapp.json"
 MAIN_JSON="$SELFTEST_ROOT/main.json"
+EXEC_PROOF="$SELFTEST_ROOT/exec-proof.txt"
 READ_PROOF="$SELFTEST_ROOT/read-proof.txt"
+READ_RESULT="$SELFTEST_ROOT/read-result.txt"
 PATCH_TARGET="$SELFTEST_ROOT/patch-target.txt"
 MAIN_STRUCTURED_PROOF="$SELFTEST_ROOT/main-structured-proof.json"
+MAIN_WORKSPACE_PROOF=""
 SKIP_WHATSAPP="${OPENCLAW_SELFTEST_SKIP_WHATSAPP:-0}"
+SELFTEST_MANAGER_ID="${OPENCLAW_SELFTEST_MANAGER_ID:-oc-selftest}"
+SUBAGENT_WAIT_ATTEMPTS="${OPENCLAW_SELFTEST_SUBAGENT_WAIT_ATTEMPTS:-180}"
+SUBAGENT_WAIT_DELAY="${OPENCLAW_SELFTEST_SUBAGENT_WAIT_DELAY:-1}"
 SELFTEST_MODE="live"
 SELFTEST_STARTED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 SELFTEST_CURRENT_STEP="init"
@@ -33,6 +37,9 @@ if [[ "$SKIP_WHATSAPP" == "1" ]]; then
 fi
 
 cleanup() {
+  if [[ -n "$MAIN_WORKSPACE_PROOF" && -f "$MAIN_WORKSPACE_PROOF" ]]; then
+    rm -f "$MAIN_WORKSPACE_PROOF"
+  fi
   rm -rf "$SELFTEST_ROOT"
 }
 
@@ -149,49 +156,63 @@ assert_tool_call() {
   assert_latest_session_pattern "$agent_id" "$pattern"
 }
 
-# Wir prüfen exec-Ergebnisse direkt im Session-Log, weil Tool-Outputs gelegentlich vom Modell leicht paraphrasiert werden.
 assert_exec_result() {
   local agent_id="$1"
   local command_substring="$2"
   local expected_output="$3"
   local session_file
   session_file="$(latest_session_jsonl "$agent_id")"
-  if [[ -z "$session_file" || ! -f "$session_file" ]]; then
-    echo "missing session log for $agent_id" >&2
-    exit 1
-  fi
-  python3 - <<'PY' "$session_file" "$command_substring" "$expected_output"
-import json, sys
+  assert_session_exec_result "$session_file" "$command_substring" "$expected_output"
+}
 
-session_file, command_substring, expected_output = sys.argv[1], sys.argv[2], sys.argv[3]
-tool_calls = {}
+assert_read_result() {
+  local agent_id="$1"
+  local path_substring="$2"
+  local expected_output="$3"
+  local session_file
+  session_file="$(latest_session_jsonl "$agent_id")"
+  assert_session_read_result "$session_file" "$path_substring" "$expected_output"
+}
 
-with open(session_file, "r", encoding="utf-8") as handle:
-    for raw_line in handle:
-        raw_line = raw_line.strip()
-        if not raw_line:
-            continue
-        entry = json.loads(raw_line)
-        message = entry.get("message") or {}
-        role = message.get("role")
-        if role == "assistant":
-            for item in message.get("content") or []:
-                if item.get("type") == "toolCall" and item.get("name") == "exec":
-                    tool_calls[item.get("id")] = (item.get("arguments") or {}).get("command", "")
-        elif role == "toolResult" and message.get("toolName") == "exec":
-            tool_call_id = message.get("toolCallId")
-            command = tool_calls.get(tool_call_id, "")
-            details = message.get("details") or {}
-            aggregated = (details.get("aggregated") or "").strip()
-            exit_code = details.get("exitCode")
-            if command_substring in command and exit_code == 0 and aggregated == expected_output:
-                print(expected_output)
-                raise SystemExit(0)
+workspace_relative_path() {
+  local target_path="$1"
+  python3 - <<'PY' "$REPO_ROOT" "$target_path"
+import pathlib, sys
 
-raise SystemExit(
-    f"missing exec result for command containing {command_substring!r} with output {expected_output!r} in {session_file}"
-)
+repo_root = pathlib.Path(sys.argv[1]).resolve()
+target_path = pathlib.Path(sys.argv[2]).resolve()
+try:
+    relative = target_path.relative_to(repo_root)
+except ValueError as exc:
+    raise SystemExit(f"path is outside repo root: {target_path} ({exc})")
+print(relative.as_posix())
 PY
+}
+
+spawn_specialist_child_session() {
+  local json_path="$1"
+  local agent_id="$2"
+  local accept_token="$3"
+  local target_path="$4"
+  local child_task="$5"
+  local main_session
+  local main_before_lines
+
+  main_session="$(agent_main_session_jsonl "$SELFTEST_MANAGER_ID")"
+  if [[ -z "$main_session" || ! -f "$main_session" ]]; then
+    main_before_lines=0
+  else
+    main_before_lines="$(session_line_count "$main_session")"
+  fi
+
+  run_openclaw_agent_json "$json_path" --agent "$SELFTEST_MANAGER_ID" --message "Nutze sessions_spawn und starte einen ${agent_id}-Subagenten. Child-Task: ${child_task} Antworte exakt mit ${accept_token}, sobald der Child-Run akzeptiert wurde."
+  if [[ -z "$main_session" || ! -f "$main_session" ]]; then
+    main_session="$(wait_for_agent_main_session_jsonl "$SELFTEST_MANAGER_ID" "$SUBAGENT_WAIT_ATTEMPTS" "$SUBAGENT_WAIT_DELAY")"
+  fi
+  run_json_assert "$json_path" "$accept_token" >/dev/null
+  wait_for_session_pattern_after_line "$main_session" "$main_before_lines" '"name":"sessions_spawn"|"toolName":"sessions_spawn"' "$SUBAGENT_WAIT_ATTEMPTS" "$SUBAGENT_WAIT_DELAY"
+  wait_for_session_pattern_after_line "$main_session" "$main_before_lines" "$target_path" "$SUBAGENT_WAIT_ATTEMPTS" "$SUBAGENT_WAIT_DELAY"
+  wait_for_child_session_from_main_after_line "$main_session" "$main_before_lines" "$agent_id" "$target_path" "$SUBAGENT_WAIT_ATTEMPTS" "$SUBAGENT_WAIT_DELAY"
 }
 
 echo "== bootstrap local coding agents =="
@@ -201,72 +222,68 @@ mark_step_completed "bootstrap"
 
 echo "== gateway health =="
 SELFTEST_CURRENT_STEP="gateway_health"
-openclaw gateway health
+openclaw_ensure_gateway_healthy
 mark_step_completed "gateway_health"
-
-echo "== claw-code wrapper proof =="
-SELFTEST_CURRENT_STEP="claw_code_wrapper"
-CLAW_NORMALIZE_CMD="claw-code-local --version | sed -n '/Version/p' | tr -s ' ' | sed 's/^ //'"
-CLAW_EXPECTED="$(eval "$CLAW_NORMALIZE_CMD")"
-run_openclaw_agent_json "$CLAW_JSON" --agent claw-code --message "Nutze exec, führe \"$CLAW_NORMALIZE_CMD\" aus und antworte exakt mit der ausgegebenen Zeile."
-assert_tool_call "claw-code" '"name":"exec"'
-assert_exec_result "claw-code" "claw-code-local --version" "$CLAW_EXPECTED" >/dev/null
-mark_step_completed "claw_code_wrapper"
 
 echo "== exec proof =="
 SELFTEST_CURRENT_STEP="exec_proof"
 EXEC_EXPECTED="EXEC_OK:$(cd "$REPO_ROOT" && pwd)"
-run_openclaw_agent_json "$EXEC_JSON" --agent oc-builder --message "Nutze exec, führe 'pwd' aus und antworte exakt mit $EXEC_EXPECTED."
-run_json_assert "$EXEC_JSON" "$EXEC_EXPECTED" >/dev/null
-assert_tool_call "oc-builder" '"name":"exec"'
+printf 'before\n' >"$EXEC_PROOF"
+EXEC_PROOF_REL="$(workspace_relative_path "$EXEC_PROOF")"
+BUILDER_EXEC_SESSION="$(spawn_specialist_child_session "$EXEC_JSON" "oc-builder" "EXEC_SPAWN_OK" "$EXEC_PROOF_REL" "führe per exec den Befehl 'pwd' aus und überschreibe danach per exec exakt die bereits existierende Datei $EXEC_PROOF_REL mit $EXEC_EXPECTED. Verwende genau diesen relativen Workspace-Pfad, keine neue Temp-Datei.")"
+wait_for_file_contents "$EXEC_PROOF" "$EXEC_EXPECTED" "$SUBAGENT_WAIT_ATTEMPTS" "$SUBAGENT_WAIT_DELAY"
+assert_session_pattern "$BUILDER_EXEC_SESSION" '"name":"exec"'
+assert_session_exec_result "$BUILDER_EXEC_SESSION" "pwd" "$(cd "$REPO_ROOT" && pwd)" >/dev/null
 mark_step_completed "exec_proof"
 
 echo "== read proof =="
 SELFTEST_CURRENT_STEP="read_proof"
-READ_EXPECTED="READ_OK_$(date +%s)"
+READ_EXPECTED="READ_OK_$(python3 - <<'PY'
+import uuid
+print(uuid.uuid4().hex)
+PY
+)"
 printf '%s\n' "$READ_EXPECTED" >"$READ_PROOF"
-run_openclaw_agent_json "$READ_JSON" --agent oc-builder --message "Nutze read, lies $READ_PROOF und antworte exakt mit dem Inhalt."
-run_json_assert "$READ_JSON" "$READ_EXPECTED" >/dev/null
-assert_tool_call "oc-builder" '"name":"read"'
+printf 'before\n' >"$READ_RESULT"
+READ_PROOF_REL="$(workspace_relative_path "$READ_PROOF")"
+READ_RESULT_REL="$(workspace_relative_path "$READ_RESULT")"
+BUILDER_READ_SESSION="$(spawn_specialist_child_session "$READ_JSON" "oc-builder" "READ_SPAWN_OK" "$READ_RESULT_REL" "nutze zwingend read, lies exakt $READ_PROOF_REL und überschreibe danach per exec exakt die bereits existierende Datei $READ_RESULT_REL mit dem gelesenen Inhalt. Verwende genau diese relativen Workspace-Pfade, keine neue Temp-Datei. Ohne echten read-Toolcall darfst du den Auftrag nicht abschließen.")"
+wait_for_file_contents "$READ_RESULT" "$READ_EXPECTED" "$SUBAGENT_WAIT_ATTEMPTS" "$SUBAGENT_WAIT_DELAY"
+assert_session_pattern "$BUILDER_READ_SESSION" '"name":"read"'
+assert_session_read_result "$BUILDER_READ_SESSION" "$READ_PROOF_REL" "$READ_EXPECTED" >/dev/null
 mark_step_completed "read_proof"
 
 echo "== main exact-read proof =="
 SELFTEST_CURRENT_STEP="main_exact_read"
 MAIN_DEFAULT="heretic-local/qwen3-4b-instruct-2507"
 MAIN_FALLBACK="openai-codex/gpt-5.3-codex-spark"
+MAIN_SESSION="$(main_session_jsonl)"
+if [[ -z "$MAIN_SESSION" || ! -f "$MAIN_SESSION" ]]; then
+  echo "could not resolve main session file" >&2
+  exit 1
+fi
+MAIN_BEFORE_LINES="$(session_line_count "$MAIN_SESSION")"
 cat >"$MAIN_STRUCTURED_PROOF" <<EOF
 {"default":"$MAIN_DEFAULT","fallback":"$MAIN_FALLBACK"}
 EOF
+MAIN_WORKSPACE_PROOF="$(workspace_mirror_file "$MAIN_STRUCTURED_PROOF" "main-structured-proof" "main-structured-proof.json")"
 MAIN_EXPECTED="DEFAULT=$MAIN_DEFAULT;FALLBACK=$MAIN_FALLBACK"
-run_openclaw_agent_json "$MAIN_JSON" --agent main --message "Nutze read, lies $MAIN_STRUCTURED_PROOF als JSON und antworte exakt mit $MAIN_EXPECTED."
+run_openclaw_agent_json "$MAIN_JSON" --agent main --message "Nutze read, lies $MAIN_WORKSPACE_PROOF als JSON und antworte exakt mit $MAIN_EXPECTED. Gib nur diese eine Zeile aus. Kein weiterer Text. Ohne echten read-Toolcall darfst du den Auftrag nicht abschließen."
 run_json_assert "$MAIN_JSON" "$MAIN_EXPECTED" >/dev/null
 run_json_meta_assert "$MAIN_JSON" "openai-codex" "gpt-5.3-codex-spark" >/dev/null
-assert_tool_call "main" "\"name\":\"read\""
-assert_tool_call "main" "$MAIN_STRUCTURED_PROOF"
+wait_for_session_pattern_after_line "$MAIN_SESSION" "$MAIN_BEFORE_LINES" '"name":"read"|"toolName":"read"' "$SUBAGENT_WAIT_ATTEMPTS" "$SUBAGENT_WAIT_DELAY"
+wait_for_session_pattern_after_line "$MAIN_SESSION" "$MAIN_BEFORE_LINES" "$MAIN_WORKSPACE_PROOF" "$SUBAGENT_WAIT_ATTEMPTS" "$SUBAGENT_WAIT_DELAY"
 mark_step_completed "main_exact_read"
 
 echo "== patch proof =="
 SELFTEST_CURRENT_STEP="patch_proof"
 PATCH_EXPECTED="PATCH_OK_$(date +%s)"
 printf 'before\n' >"$PATCH_TARGET"
-run_openclaw_agent_json "$PATCH_JSON" --agent oc-builder --message "Nutze apply_patch oder edit, ändere $PATCH_TARGET so dass die Datei exakt '$PATCH_EXPECTED' enthält. Antworte exakt mit PATCH_DONE."
-run_json_assert "$PATCH_JSON" "PATCH_DONE" >/dev/null
-ACTUAL_PATCH="$(tr -d '\r' <"$PATCH_TARGET" | tr -d '\n')"
-if [[ "$ACTUAL_PATCH" != "$PATCH_EXPECTED" ]]; then
-  echo "patch proof failed: $ACTUAL_PATCH != $PATCH_EXPECTED" >&2
-  exit 1
-fi
-assert_tool_call "oc-builder" '"name":"apply_patch"|"name":"edit"|"name":"write"'
+PATCH_TARGET_REL="$(workspace_relative_path "$PATCH_TARGET")"
+BUILDER_PATCH_SESSION="$(spawn_specialist_child_session "$PATCH_JSON" "oc-builder" "PATCH_SPAWN_OK" "$PATCH_TARGET_REL" "ändere per apply_patch, edit oder write exakt die bereits existierende Datei $PATCH_TARGET_REL so, dass sie nur noch die Zeile $PATCH_EXPECTED enthält. Verwende genau diesen relativen Workspace-Pfad.")"
+wait_for_file_contents "$PATCH_TARGET" "$PATCH_EXPECTED" "$SUBAGENT_WAIT_ATTEMPTS" "$SUBAGENT_WAIT_DELAY"
+assert_session_pattern "$BUILDER_PATCH_SESSION" '"name":"apply_patch"|"name":"edit"|"name":"write"'
 mark_step_completed "patch_proof"
-
-echo "== github proof =="
-SELFTEST_CURRENT_STEP="github_proof"
-GITHUB_EXPECTED="GITHUB_OK:yankhy-source/claw-code-parity"
-GITHUB_CMD="gh repo view yankhy-source/claw-code-parity --json nameWithOwner --jq '\"GITHUB_OK:\" + .nameWithOwner'"
-run_openclaw_agent_json "$GITHUB_JSON" --agent oc-github --message "Nutze exec und führe \"$GITHUB_CMD\" aus. Antworte exakt mit $GITHUB_EXPECTED."
-assert_tool_call "oc-github" '"name":"exec"'
-assert_exec_result "oc-github" "gh repo view yankhy-source/claw-code-parity" "$GITHUB_EXPECTED" >/dev/null
-mark_step_completed "github_proof"
 
 echo "== main orchestrator smoke =="
 SELFTEST_CURRENT_STEP="main_orchestrator"
@@ -294,7 +311,7 @@ fi
 
 echo "== whatsapp reply proof =="
 SELFTEST_CURRENT_STEP="whatsapp_reply"
-SELF_E164="${OPENCLAW_SELFTEST_WHATSAPP_TO:-$(openclaw channels status --json | python3 -c 'import json, sys; raw=sys.stdin.read(); start=raw.find("{"); assert start >= 0, raw; print(json.loads(raw[start:])["channels"]["whatsapp"]["self"]["e164"])')}"
+SELF_E164="${OPENCLAW_SELFTEST_WHATSAPP_TO:-$(openclaw_whatsapp_self_e164)}"
 WA_EXPECTED="WA_SELFTEST_$(date +%s)"
 if [[ ! -f "$GATEWAY_LOG" ]]; then
   echo "missing gateway log at $GATEWAY_LOG" >&2

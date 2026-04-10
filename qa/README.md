@@ -17,14 +17,27 @@ Key workflow:
 - `pnpm qa:local-agents:doctor` audits the local coding-agent config plus latest selftest summary and exits non-zero on drift.
 - `pnpm qa:local-agents:ensure` checks the last selftest summary and reruns the minimal required selftest when the state is missing, stale, failed, or below the requested mode.
 - `pnpm qa:local-agents:status` reads the latest selftest summary and exits non-zero if the last run failed or is stale.
+- `pnpm qa:local-agents:ops-status` prints the current operating state across selftest, intelligence loop, recovery, and human WhatsApp, with warning-only recent-history counters.
+- `pnpm qa:local-agents:trend` reads recent per-run summaries for intelligence, recovery, and human WhatsApp paths and exits non-zero on visible regressions in the inspected window.
 - `pnpm qa:local-agents:core-selftest` runs the local coding-agent proofs without the live WhatsApp delivery step.
 - `pnpm qa:local-agents:selftest` runs the local end-to-end coding stack check, including `main` exact-read discipline, `main` subagent orchestration, specialist routing, delegated patch work, and WhatsApp reply delivery.
 - `pnpm qa:local-agents:whatsapp-smoke` runs the focused live WhatsApp client proof on top of `doctor/ensure`.
-- `pnpm qa:local-agents:human-eval` runs user-perspective questions and a user-facing artifact task against `main`, and keeps the outputs under `.local-human-eval/` plus `.local-agent-last-human-eval.json`.
+- `pnpm qa:local-agents:human-eval` runs user-perspective questions through fresh dedicated eval agents plus a user-facing artifact task, and keeps the outputs under `.local-human-eval/` plus `.local-agent-last-human-eval.json`.
+- `pnpm qa:local-agents:human-whatsapp-eval` runs user-perspective questions over the live WhatsApp delivery path through `oc-human-main`, ensures there is a fresh enough live baseline first, and keeps the outputs under `.local-human-whatsapp-eval/` plus `.local-agent-last-human-whatsapp-eval.json`.
+- `pnpm qa:local-agents:intelligence-loop` runs the full human loop: human eval, WhatsApp human eval, and a separate evaluator review with a next upgrade recommendation stored under `.local-agent-intelligence-loop/` plus `.local-agent-last-intelligence-loop.json`.
+- `pnpm qa:local-agents:recovery-smoke` intentionally restarts the gateway and then proves the live WhatsApp human path recovers cleanly, storing the result under `.local-agent-recovery-smoke/` plus `.local-agent-last-recovery-smoke.json`.
+- `pnpm qa:local-agents:stress-recovery-smoke` runs several back-to-back live human WhatsApp evals and then a full recovery smoke, storing the aggregate result under `.local-agent-stress-recovery-smoke/` plus `.local-agent-last-stress-recovery-smoke.json`.
 - both selftest modes refresh `.local-agent-last-selftest.json` in the repo root as a machine-readable status artifact for agents and automation.
 - `pnpm qa:local-agents:main-smoke` runs `main` as an orchestrator and verifies that it spawns a Codex-backed `oc-builder` child run.
 - `pnpm qa:local-agents:routing-smoke` verifies that `main` routes GitHub work to `oc-github` and `claw-code` work to `claw-code`.
 - `pnpm qa:local-agents:main-task-smoke` verifies that `main` delegates a small real repo patch task to `oc-builder`.
 - `pnpm qa:local-agents:task-smoke` runs one small real repo task through `oc-builder` and verifies the tool usage in session logs.
+
+Working rule behind these flows:
+
+- keep `main` as the user-facing manager when one answer must combine multiple verified inputs
+- use specialists for bounded tasks
+- preserve handoff state in short files and summaries
+- grade user-facing quality with a separate evaluator instead of trusting the generator alone
 
 Keep this folder in git. Add new scenarios here before wiring them into automation.

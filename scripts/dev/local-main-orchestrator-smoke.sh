@@ -8,6 +8,9 @@ NODE22_BIN="${OPENCLAW_SELFTEST_NODE_BIN:-$HOME/.node22/current/bin}"
 SMOKE_ROOT="$(mktemp -d "$REPO_ROOT/.local-main-orchestrator-smoke.XXXXXX")"
 MAIN_JSON="$SMOKE_ROOT/main.json"
 PROOF_FILE="$(mktemp /tmp/main-orchestrator-smoke.XXXXXX)"
+SELFTEST_MANAGER_ID="${OPENCLAW_SELFTEST_MANAGER_ID:-oc-selftest}"
+SUBAGENT_WAIT_ATTEMPTS="${OPENCLAW_SELFTEST_SUBAGENT_WAIT_ATTEMPTS:-180}"
+SUBAGENT_WAIT_DELAY="${OPENCLAW_SELFTEST_SUBAGENT_WAIT_DELAY:-1}"
 
 cleanup() {
   rm -rf "$SMOKE_ROOT"
@@ -29,28 +32,24 @@ echo "== bootstrap local coding agents =="
 node "$REPO_ROOT/scripts/dev/bootstrap-local-coding-agents.mjs" >/dev/null
 
 echo "== main orchestrator smoke =="
-run_openclaw_agent_json "$MAIN_JSON" --agent main --message "Nutze sessions_spawn und starte einen oc-builder-Subagenten im aktuellen Repo. Child-Task: führe per exec den Befehl 'pwd' aus und überschreibe danach per exec exakt die bereits existierende Datei $PROOF_FILE mit MAIN_SUBAGENT_OK. Verwende genau diesen Pfad, keine neue Temp-Datei. Antworte exakt mit MAIN_SPAWN_OK, sobald der Child-Run akzeptiert wurde."
-run_json_assert "$MAIN_JSON" "MAIN_SPAWN_OK" >/dev/null
-
-MAIN_SESSION="$(latest_session_jsonl "main")"
-assert_session_pattern "$MAIN_SESSION" '"name":"sessions_spawn"'
-assert_session_pattern "$MAIN_SESSION" "$PROOF_FILE"
-
-BUILDER_SESSION=""
-for _ in $(seq 1 40); do
-  BUILDER_SESSION="$(child_session_file_from_main "$MAIN_SESSION" "oc-builder" "$PROOF_FILE")"
-  if [[ -n "$BUILDER_SESSION" && -f "$BUILDER_SESSION" ]]; then
-    break
-  fi
-  sleep 1
-done
-
-if [[ -z "$BUILDER_SESSION" || ! -f "$BUILDER_SESSION" ]]; then
-  echo "could not find oc-builder subagent session for $PROOF_FILE" >&2
-  exit 1
+MAIN_SESSION="$(agent_main_session_jsonl "$SELFTEST_MANAGER_ID")"
+if [[ -z "$MAIN_SESSION" || ! -f "$MAIN_SESSION" ]]; then
+  MAIN_BEFORE_LINES=0
+else
+  MAIN_BEFORE_LINES="$(session_line_count "$MAIN_SESSION")"
 fi
 
-wait_for_file_contents "$PROOF_FILE" "MAIN_SUBAGENT_OK"
+run_openclaw_agent_json "$MAIN_JSON" --agent "$SELFTEST_MANAGER_ID" --message "Nutze sessions_spawn und starte einen oc-builder-Subagenten im aktuellen Repo. Child-Task: führe per exec den Befehl 'pwd' aus und überschreibe danach per exec exakt die bereits existierende Datei $PROOF_FILE mit MAIN_SUBAGENT_OK. Verwende genau diesen Pfad, keine neue Temp-Datei. Antworte exakt mit MAIN_SPAWN_OK, sobald der Child-Run akzeptiert wurde."
+if [[ -z "$MAIN_SESSION" || ! -f "$MAIN_SESSION" ]]; then
+  MAIN_SESSION="$(wait_for_agent_main_session_jsonl "$SELFTEST_MANAGER_ID" "$SUBAGENT_WAIT_ATTEMPTS" "$SUBAGENT_WAIT_DELAY")"
+fi
+run_json_assert "$MAIN_JSON" "MAIN_SPAWN_OK" >/dev/null
+
+wait_for_session_pattern_after_line "$MAIN_SESSION" "$MAIN_BEFORE_LINES" '"name":"sessions_spawn"|"toolName":"sessions_spawn"' "$SUBAGENT_WAIT_ATTEMPTS" "$SUBAGENT_WAIT_DELAY"
+wait_for_session_pattern_after_line "$MAIN_SESSION" "$MAIN_BEFORE_LINES" "$PROOF_FILE" "$SUBAGENT_WAIT_ATTEMPTS" "$SUBAGENT_WAIT_DELAY"
+BUILDER_SESSION="$(wait_for_child_session_from_main_after_line "$MAIN_SESSION" "$MAIN_BEFORE_LINES" "oc-builder" "$PROOF_FILE" "$SUBAGENT_WAIT_ATTEMPTS" "$SUBAGENT_WAIT_DELAY")"
+
+wait_for_file_contents "$PROOF_FILE" "MAIN_SUBAGENT_OK" "$SUBAGENT_WAIT_ATTEMPTS" "$SUBAGENT_WAIT_DELAY"
 
 assert_session_pattern "$BUILDER_SESSION" '"provider":"openai-codex"'
 assert_session_pattern "$BUILDER_SESSION" '"model":"gpt-5.3-codex-spark"'

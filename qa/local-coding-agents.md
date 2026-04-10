@@ -69,6 +69,21 @@ Read the last selftest result without running a new test:
 pnpm qa:local-agents:status
 ```
 
+Read the recent trend state across intelligence, recovery, and human WhatsApp runs:
+
+```bash
+pnpm qa:local-agents:trend
+```
+
+Read just the current operating state without the fuller history report:
+
+```bash
+pnpm qa:local-agents:ops-status
+```
+
+Use `ops-status` for fast health checks and automation gates. Use `trend` when
+you want the wider recent-history window and regression warnings.
+
 Audit the local coding-agent config and latest selftest together:
 
 ```bash
@@ -117,7 +132,62 @@ pnpm qa:local-agents:human-eval
 
 That eval now keeps its artifacts on disk under `.local-human-eval/` and refreshes
 `.local-agent-last-human-eval.json` in the repo root, so the created answers and
-artifact file remain inspectable after the run.
+artifact file remain inspectable after the run. It uses fresh dedicated eval
+agents instead of the long-lived `main` and `oc-builder` sessions.
+
+Run the same user-perspective style check over the live WhatsApp delivery path:
+
+```bash
+PATH="${OPENCLAW_SELFTEST_NODE_BIN:-$HOME/.node22/current/bin}:$PATH" \
+pnpm qa:local-agents:human-whatsapp-eval
+```
+
+That live eval keeps its outputs under `.local-human-whatsapp-eval/` and refreshes
+`.local-agent-last-human-whatsapp-eval.json` in the repo root. It exercises the
+real live WhatsApp path through the fresh dedicated `oc-human-main` profile and
+first ensures there is a fresh enough live selftest summary available.
+
+Run the full research-backed intelligence loop:
+
+```bash
+PATH="${OPENCLAW_SELFTEST_NODE_BIN:-$HOME/.node22/current/bin}:$PATH" \
+pnpm qa:local-agents:intelligence-loop
+```
+
+That loop chains three roles:
+
+- generator-style human eval over the local agent stack
+- generator-style human eval over the live WhatsApp path
+- separate evaluator review via `oc-selftest` that reads both summaries and writes one focused next upgrade step
+
+It persists run artifacts under `.local-agent-intelligence-loop/` and refreshes
+`.local-agent-last-intelligence-loop.json` in the repo root. Each run also keeps
+its own `summary.json` inside the run directory so later trend analysis can read
+real history instead of only the latest result.
+
+Run the recovery smoke after an intentional gateway restart:
+
+```bash
+PATH="${OPENCLAW_SELFTEST_NODE_BIN:-$HOME/.node22/current/bin}:$PATH" \
+pnpm qa:local-agents:recovery-smoke
+```
+
+Run a harder burst-and-recover check that chains multiple live WhatsApp evals
+before the recovery path:
+
+```bash
+pnpm qa:local-agents:stress-recovery-smoke
+```
+
+This is the stronger operational proof after the basic green path. It catches
+cases where one single live run is green but short burst traffic or an immediate
+post-burst restart still exposes instability.
+
+That smoke restarts the gateway, waits for health to return, then proves the
+live human WhatsApp path still responds cleanly. It persists artifacts under
+`.local-agent-recovery-smoke/` and refreshes
+`.local-agent-last-recovery-smoke.json`. Each run also keeps a `summary.json`
+inside its run directory.
 
 Run the full end-to-end selftest:
 
@@ -205,15 +275,64 @@ command, so `claw-code-local summary` is not a stable probe.
 - `main` can read the latest summary file over the live WhatsApp delivery path
 - the live WhatsApp reply matches the exact derived summary string
 - the main session log contains the expected `read` tool call on the summary file
+- by default it tolerates older but still healthy live summaries for up to 6 hours before forcing a full live refresh
 
 ## What the Human Perspective Eval Verifies
 
-- `main` answers a human-style status question in concise German
-- `main` produces a short next-step answer from the user's perspective
-- `main` creates a user-facing artifact file with current live status data
-- the live baseline is fresh before those tests run
+- `oc-human-main` answers a human-style status question in concise German
+- `oc-human-main` produces a short next-step answer from the user's perspective
+- `oc-human-builder` creates a user-facing artifact file from the latest selftest summary
+- the eval runs on fresh dedicated QA agents instead of long-lived main sessions
+- the status and artifact proofs use run-specific copied summary files, so a fresh `read` is still required even when sessions already know older state
 - the answer avoids internal test labels and raw JSON field names
 - the created artifact remains on disk for inspection after the eval
+
+## What the Human WhatsApp Eval Verifies
+
+- `oc-human-main` answers a human-style status question over the live WhatsApp delivery path
+- the live answer stays out of harness/test-report language
+- `oc-human-main` answers a human next-step question in first-person bullets over WhatsApp
+- the run keeps persistent artifacts and a machine-readable summary
+- the run first confirms or refreshes a fresh enough live selftest baseline
+- the status proof uses a run-specific copied summary file, so the live check cannot pass purely from remembered prior state
+
+## What the Intelligence Loop Verifies
+
+- the local human eval and live WhatsApp human eval both pass in the same cycle
+- a separate evaluator agent reads both summaries plus the live selftest summary
+- the evaluator writes a concise intelligence review and one focused next upgrade step
+- the review avoids leaking internal paths, JSON field names, or harness labels
+- the loop leaves behind a stable machine-readable summary for the latest full cycle
+
+## What the Recovery Smoke Verifies
+
+- the gateway can be restarted intentionally without leaving the local stack unhealthy
+- the live human WhatsApp eval still passes after the restart
+- the recovery result is written to a stable machine-readable summary
+
+## What the Trend Report Verifies
+
+- recent intelligence-loop runs stay green across the inspected history window
+- recent recovery-smoke runs stay green across the inspected history window
+- the latest human WhatsApp eval is green
+- the latest selftest is still a passed live run
+- the most recent next-upgrade recommendation from the intelligence loop stays visible to automation and operators
+
+## Research-Backed Design Rules
+
+These rules are the load-bearing ones in the current local setup:
+
+- keep `main` as a manager when one final answer must combine verified outputs from several specialist paths
+- use specialists for bounded tasks such as GitHub inspection, patching, or `claw-code` execution
+- keep handoff context in short structured artifacts instead of dragging long transcripts across turns
+- run a separate evaluator for user-facing quality instead of trusting the generator to grade itself
+- simplify the harness only after proving which parts are actually load-bearing
+
+Primary references behind those choices:
+
+- OpenAI Agents SDK orchestration guide: `agents as tools` vs `handoffs`, eval loops, and specialized agents
+- OpenAI Agents SDK handoff prompt guidance for hiding transfer mechanics from the user
+- Anthropic harness-design writeup on planner/generator/evaluator roles, structured artifact handoffs, and skepticism in the evaluator
 
 ## What the Task Smoke Verifies
 

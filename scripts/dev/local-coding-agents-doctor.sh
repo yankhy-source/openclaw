@@ -88,6 +88,7 @@ main_fallbacks = [
 ]
 shared_skill_ids = ["claw-code-local", "main-tool-discipline", "main-human-operator"]
 agent_ids = ["oc-builder", "oc-github", "claw-code"]
+human_eval_agent_ids = ["oc-human-main", "oc-human-builder"]
 home_dir = Path.home()
 shared_path_prepend = [
     str(repo_root / "scripts" / "dev"),
@@ -110,6 +111,20 @@ def find_agent(agent_list, agent_id):
 def require(condition: bool, code: str, message: str) -> None:
     if not condition:
         add("error", code, message)
+
+def model_primary(value):
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        primary = value.get("primary")
+        if isinstance(primary, str):
+            return primary
+    return None
+
+def model_fallbacks(value):
+    if isinstance(value, dict) and isinstance(value.get("fallbacks"), list):
+        return [item for item in value.get("fallbacks") if isinstance(item, str)]
+    return []
 
 report = {
     "doctorVersion": 1,
@@ -174,17 +189,23 @@ if isinstance(config, dict):
     defaults_subagents = defaults.get("subagents") if isinstance(defaults.get("subagents"), dict) else {}
     report["checks"]["defaultsSubagentsModel"] = defaults_subagents.get("model")
     require(defaults_subagents.get("model") == main_primary_model, "defaults_subagents_model_mismatch", f"agents.defaults.subagents.model must be {main_primary_model}")
+    defaults_sandbox = defaults.get("sandbox") if isinstance(defaults.get("sandbox"), dict) else {}
+    report["checks"]["defaultsSandboxMode"] = defaults_sandbox.get("mode")
+    require(defaults_sandbox.get("mode") == "off", "defaults_sandbox_mode_mismatch", 'agents.defaults.sandbox.mode must be "off"')
 
     agent_to_agent = tools.get("agentToAgent") if isinstance(tools.get("agentToAgent"), dict) else {}
     allow = agent_to_agent.get("allow") if isinstance(agent_to_agent.get("allow"), list) else []
     report["checks"]["agentToAgentAllow"] = allow
-    for agent_id in agent_ids:
+    for agent_id in ["oc-selftest", *agent_ids, *human_eval_agent_ids]:
         require(agent_id in allow, "agent_to_agent_allow_missing", f"tools.agentToAgent.allow missing {agent_id}")
 
     expected_agents = {
-        "oc-builder": {"workspace": str(repo_root), "model": main_primary_model},
-        "oc-github": {"workspace": str(repo_root), "model": main_primary_model},
-        "claw-code": {"workspace": str(parity_root), "model": main_primary_model},
+        "oc-selftest": {"workspace": str(repo_root), "model": main_primary_model, "fallbacks": main_fallbacks, "subagents_model": main_primary_model, "allow_agents": agent_ids},
+        "oc-builder": {"workspace": str(repo_root), "model": main_primary_model, "fallbacks": main_fallbacks},
+        "oc-github": {"workspace": str(repo_root), "model": main_primary_model, "fallbacks": main_fallbacks},
+        "claw-code": {"workspace": str(parity_root), "model": main_primary_model, "fallbacks": main_fallbacks},
+        "oc-human-main": {"workspace": str(repo_root), "model": main_primary_model, "fallbacks": main_fallbacks},
+        "oc-human-builder": {"workspace": str(repo_root), "model": main_primary_model, "fallbacks": main_fallbacks},
     }
     report["checks"]["agents"] = {}
     for agent_id, expected in expected_agents.items():
@@ -198,7 +219,16 @@ if isinstance(config, dict):
             "skills": agent.get("skills"),
         }
         require(agent.get("workspace") == expected["workspace"], f"{agent_id}_workspace_mismatch", f"{agent_id}.workspace must be {expected['workspace']}")
-        require(agent.get("model") == expected["model"], f"{agent_id}_model_mismatch", f"{agent_id}.model must be {expected['model']}")
+        require(model_primary(agent.get("model")) == expected["model"], f"{agent_id}_model_mismatch", f"{agent_id}.model.primary must be {expected['model']}")
+        fallbacks = model_fallbacks(agent.get("model"))
+        for fallback in expected["fallbacks"]:
+            require(fallback in fallbacks, f"{agent_id}_fallback_missing", f"{agent_id}.model.fallbacks missing {fallback}")
+        if "subagents_model" in expected:
+            subagents = agent.get("subagents") if isinstance(agent.get("subagents"), dict) else {}
+            require(subagents.get("model") == expected["subagents_model"], f"{agent_id}_subagents_model_mismatch", f"{agent_id}.subagents.model must be {expected['subagents_model']}")
+            allow_agents = subagents.get("allowAgents") if isinstance(subagents.get("allowAgents"), list) else []
+            for allowed_agent in expected.get("allow_agents", []):
+                require(allowed_agent in allow_agents, f"{agent_id}_allow_agent_missing", f"{agent_id}.subagents.allowAgents missing {allowed_agent}")
         exec_cfg = ((agent.get("tools") or {}).get("exec") or {})
         path_prepend = exec_cfg.get("pathPrepend") if isinstance(exec_cfg.get("pathPrepend"), list) else []
         for expected_path in shared_path_prepend:

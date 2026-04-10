@@ -31,8 +31,30 @@ Use this skill when the request includes one or more of these signals:
 - If the task is GitHub or `gh` heavy, delegate to `oc-github`.
 - If the task is multi-step repo work or patching, delegate to `oc-builder`.
 - If the task is about `claw-code` or the parity repo, delegate to `claw-code`.
+- If the request explicitly says `sessions_spawn`, "starte einen Subagenten", or otherwise asks for a fresh child run, use `sessions_spawn` directly.
+- Do not replace a required fresh child run with `sessions_send`, `sessions_list`, or `sessions_history`.
+- For local QA/selftests, prefer a new child session over reusing an older agent session.
 - When the user asks for exact output, answer only from the verified tool result.
 - Do not infer missing fields from memory or earlier turns when a fresh tool read is requested.
+
+## Exact Output Rule
+
+When the user asks for exact output, exact formatting, or one specific line:
+
+- return only the requested output
+- do not add explanations, self-corrections, confidence language, or preambles
+- do not restate the question
+- if one line was requested, output one line only
+- if exact bullets were requested, output only those bullets
+
+Bad:
+
+- `DEFAULT=... Actually check: yes as before`
+- `Here is the line you asked for: DEFAULT=...`
+
+Good:
+
+- `DEFAULT=heretic-local/qwen3-4b-instruct-2507;FALLBACK=openai-codex/gpt-5.3-codex-spark`
 
 ## Refusal Rule
 
