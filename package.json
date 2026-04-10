@@ -1192,6 +1192,7 @@
     "qa:local-agents:human-whatsapp-eval": "bash scripts/dev/local-human-whatsapp-eval.sh",
     "qa:local-agents:human-whatsapp-conversation-eval": "bash scripts/dev/local-human-whatsapp-conversation-eval.sh",
     "qa:local-agents:human-whatsapp-resume-eval": "bash scripts/dev/local-human-whatsapp-resume-eval.sh",
+    "qa:local-agents:human-whatsapp-resume-failure-eval": "bash scripts/dev/local-human-whatsapp-resume-failure-eval.sh",
     "qa:local-agents:intelligence-loop": "bash scripts/dev/local-agent-intelligence-loop.sh",
     "qa:local-agents:recovery-smoke": "bash scripts/dev/local-agent-recovery-smoke.sh",
     "qa:local-agents:stress-recovery-smoke": "bash scripts/dev/local-agent-stress-recovery-smoke.sh",

@@ -88,7 +88,7 @@ session_pattern_after_line_with_retry() {
   local delay="${5:-1}"
 
   for _ in $(seq 1 "$attempts"); do
-    if [[ -n "$session_file" && -f "$session_file" ]] && tail -n "+$((start_line + 1))" "$session_file" | rg -q "$pattern"; then
+    if [[ -n "$session_file" && -f "$session_file" ]] && session_pattern_line_after_line "$session_file" "$start_line" "$pattern" >/dev/null; then
       return 0
     fi
     sleep "$delay"
@@ -470,15 +470,15 @@ wait_for_valid_artifact "$ARTIFACT_PATH" "$CONVERSATION_MARKER" 180 1
 ARTIFACT_TEXT="$(cat "$ARTIFACT_PATH")"
 
 if [[ "$ARTIFACT_ROUTE" == "builder" ]]; then
-  assert_session_pattern "$BUILDER_SESSION" '"provider":"openai-codex"'
-  assert_session_pattern "$BUILDER_SESSION" '"model":"gpt-5.3-codex-spark"'
-  assert_session_pattern "$BUILDER_SESSION" "$SUMMARY_SNAPSHOT_PATH"
-  assert_session_pattern "$BUILDER_SESSION" '"name":"apply_patch"|"name":"edit"|"name":"write"|"name":"exec"|"toolName":"apply_patch"|"toolName":"edit"|"toolName":"write"|"toolName":"exec"'
-  assert_session_pattern "$BUILDER_SESSION" "$ARTIFACT_PATH"
-  assert_session_pattern "$BUILDER_SESSION" '"name":"read"|"name":"exec"|"toolName":"read"|"toolName":"exec"'
+  wait_for_session_pattern_after_line "$BUILDER_SESSION" 0 '"provider":"openai-codex"' 120 1
+  wait_for_session_pattern_after_line "$BUILDER_SESSION" 0 '"model":"gpt-5.3-codex-spark"' 120 1
+  wait_for_session_pattern_after_line "$BUILDER_SESSION" 0 "$SUMMARY_SNAPSHOT_PATH" 120 1
+  wait_for_session_pattern_after_line "$BUILDER_SESSION" 0 '"name":"apply_patch"|"name":"edit"|"name":"write"|"name":"exec"|"toolName":"apply_patch"|"toolName":"edit"|"toolName":"write"|"toolName":"exec"' 120 1
+  wait_for_session_pattern_after_line "$BUILDER_SESSION" 0 "$ARTIFACT_PATH" 120 1
+  wait_for_session_pattern_after_line "$BUILDER_SESSION" 0 '"name":"read"|"name":"exec"|"toolName":"read"|"toolName":"exec"' 120 1
 else
-  assert_session_pattern_after_line "$MAIN_SESSION" "$TURN3_BEFORE_LINES" "$ARTIFACT_PATH"
-  assert_session_pattern_after_line "$MAIN_SESSION" "$TURN3_BEFORE_LINES" '"name":"apply_patch"|"name":"edit"|"name":"write"|"name":"exec"|"toolName":"apply_patch"|"toolName":"edit"|"toolName":"write"|"toolName":"exec"'
+  wait_for_session_pattern_after_line "$MAIN_SESSION" "$TURN3_BEFORE_LINES" "$ARTIFACT_PATH" 120 1
+  wait_for_session_pattern_after_line "$MAIN_SESSION" "$TURN3_BEFORE_LINES" '"name":"apply_patch"|"name":"edit"|"name":"write"|"name":"exec"|"toolName":"apply_patch"|"toolName":"edit"|"toolName":"write"|"toolName":"exec"' 120 1
 fi
 
 EVAL_STATUS="passed"

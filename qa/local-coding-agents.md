@@ -326,11 +326,20 @@ command, so `claw-code-local summary` is not a stable probe.
 
 ## What the Intelligence Loop Verifies
 
-- the local human eval, live WhatsApp human eval, deeper WhatsApp conversation eval, and interruption/resume eval all pass in the same cycle
-- a separate evaluator agent reads all four summaries plus the live selftest summary
+- the local human eval, live WhatsApp human eval, deeper WhatsApp conversation eval, interruption/resume eval, and lost-context resume-failure eval all pass in the same cycle
+- a separate evaluator agent reads all five summaries plus the live selftest summary
 - the evaluator writes a concise intelligence review and one focused next upgrade step
 - the review avoids leaking internal paths, JSON field names, or harness labels
 - the loop leaves behind a stable machine-readable summary for the latest full cycle
+
+## What the Human WhatsApp Resume Failure Eval Verifies
+
+- `main` creates a fresh source marker over the real WhatsApp path
+- `oc-human-main` recovers after a gateway restart without sharing `main`'s live chat context
+- the recovery agent reconstructs the marker from `agent:main:main` via `sessions_history`
+- the recovery agent rewrites a recovery artifact file from reconstructed state instead of an intact happy-path chat memory
+- the recovery agent verifies the written artifact with a fresh `read`
+- the live reply stays concise, user-facing, and free of harness labels
 
 ## What the Recovery Smoke Verifies
 
@@ -345,6 +354,7 @@ command, so `claw-code-local summary` is not a stable probe.
 - the latest human WhatsApp eval is green
 - the latest human WhatsApp conversation eval is green
 - the latest human WhatsApp resume eval is green
+- the latest human WhatsApp resume-failure eval is green
 - the latest selftest is still a passed live run
 - the most recent next-upgrade recommendation from the intelligence loop stays visible to automation and operators
 

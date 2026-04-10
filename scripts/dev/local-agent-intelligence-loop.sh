@@ -10,6 +10,7 @@ HUMAN_EVAL_SUMMARY_PATH="${OPENCLAW_HUMAN_EVAL_SUMMARY_PATH:-$REPO_ROOT/.local-a
 HUMAN_WHATSAPP_EVAL_SUMMARY_PATH="${OPENCLAW_HUMAN_WHATSAPP_EVAL_SUMMARY_PATH:-$REPO_ROOT/.local-agent-last-human-whatsapp-eval.json}"
 HUMAN_WHATSAPP_CONVERSATION_EVAL_SUMMARY_PATH="${OPENCLAW_HUMAN_WHATSAPP_CONVERSATION_EVAL_SUMMARY_PATH:-$REPO_ROOT/.local-agent-last-human-whatsapp-conversation-eval.json}"
 HUMAN_WHATSAPP_RESUME_EVAL_SUMMARY_PATH="${OPENCLAW_HUMAN_WHATSAPP_RESUME_EVAL_SUMMARY_PATH:-$REPO_ROOT/.local-agent-last-human-whatsapp-resume-eval.json}"
+HUMAN_WHATSAPP_RESUME_FAILURE_EVAL_SUMMARY_PATH="${OPENCLAW_HUMAN_WHATSAPP_RESUME_FAILURE_EVAL_SUMMARY_PATH:-$REPO_ROOT/.local-agent-last-human-whatsapp-resume-failure-eval.json}"
 INTELLIGENCE_LOOP_BASE="${OPENCLAW_INTELLIGENCE_LOOP_BASE:-$REPO_ROOT/.local-agent-intelligence-loop}"
 INTELLIGENCE_LOOP_SUMMARY_PATH="${OPENCLAW_INTELLIGENCE_LOOP_SUMMARY_PATH:-$REPO_ROOT/.local-agent-last-intelligence-loop.json}"
 BOOTSTRAP_SCRIPT="$SCRIPT_DIR/bootstrap-local-coding-agents.mjs"
@@ -17,6 +18,7 @@ HUMAN_EVAL_SCRIPT="$SCRIPT_DIR/local-human-perspective-eval.sh"
 HUMAN_WHATSAPP_EVAL_SCRIPT="$SCRIPT_DIR/local-human-whatsapp-eval.sh"
 HUMAN_WHATSAPP_CONVERSATION_EVAL_SCRIPT="$SCRIPT_DIR/local-human-whatsapp-conversation-eval.sh"
 HUMAN_WHATSAPP_RESUME_EVAL_SCRIPT="$SCRIPT_DIR/local-human-whatsapp-resume-eval.sh"
+HUMAN_WHATSAPP_RESUME_FAILURE_EVAL_SCRIPT="$SCRIPT_DIR/local-human-whatsapp-resume-failure-eval.sh"
 EVALUATOR_AGENT_ID="${OPENCLAW_INTELLIGENCE_EVALUATOR_AGENT_ID:-oc-selftest}"
 LOOP_ROOT=""
 REVIEW_JSON=""
@@ -26,6 +28,7 @@ HUMAN_EVAL_SNAPSHOT_PATH=""
 HUMAN_WHATSAPP_SNAPSHOT_PATH=""
 HUMAN_WHATSAPP_CONVERSATION_SNAPSHOT_PATH=""
 HUMAN_WHATSAPP_RESUME_SNAPSHOT_PATH=""
+HUMAN_WHATSAPP_RESUME_FAILURE_SNAPSHOT_PATH=""
 LOOP_STARTED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 LOOP_STATUS="failed"
 LOOP_FAILED_COMMAND=""
@@ -37,6 +40,7 @@ HUMAN_EVAL_STATUS=""
 HUMAN_WHATSAPP_EVAL_STATUS=""
 HUMAN_WHATSAPP_CONVERSATION_EVAL_STATUS=""
 HUMAN_WHATSAPP_RESUME_EVAL_STATUS=""
+HUMAN_WHATSAPP_RESUME_FAILURE_EVAL_STATUS=""
 
 if [[ -d "$NODE22_BIN" ]]; then
   PATH="$NODE22_BIN:$PATH"
@@ -55,6 +59,7 @@ HUMAN_EVAL_SNAPSHOT_PATH="$LOOP_ROOT/human-eval-summary.json"
 HUMAN_WHATSAPP_SNAPSHOT_PATH="$LOOP_ROOT/human-whatsapp-eval-summary.json"
 HUMAN_WHATSAPP_CONVERSATION_SNAPSHOT_PATH="$LOOP_ROOT/human-whatsapp-conversation-summary.json"
 HUMAN_WHATSAPP_RESUME_SNAPSHOT_PATH="$LOOP_ROOT/human-whatsapp-resume-summary.json"
+HUMAN_WHATSAPP_RESUME_FAILURE_SNAPSHOT_PATH="$LOOP_ROOT/human-whatsapp-resume-failure-summary.json"
 
 source "$SCRIPT_DIR/lib/openclaw-smoke-common.sh"
 
@@ -86,6 +91,7 @@ write_loop_summary() {
     "$HUMAN_WHATSAPP_EVAL_SUMMARY_PATH" \
     "$HUMAN_WHATSAPP_CONVERSATION_EVAL_SUMMARY_PATH" \
     "$HUMAN_WHATSAPP_RESUME_EVAL_SUMMARY_PATH" \
+    "$HUMAN_WHATSAPP_RESUME_FAILURE_EVAL_SUMMARY_PATH" \
     "$REVIEW_PATH" \
     "$REVIEW_JSON" \
     "$EVALUATOR_AGENT_ID" \
@@ -96,6 +102,7 @@ write_loop_summary() {
     "$HUMAN_WHATSAPP_EVAL_STATUS" \
     "$HUMAN_WHATSAPP_CONVERSATION_EVAL_STATUS" \
     "$HUMAN_WHATSAPP_RESUME_EVAL_STATUS" \
+    "$HUMAN_WHATSAPP_RESUME_FAILURE_EVAL_STATUS" \
     "$NEXT_UPGRADE_TEXT" \
     "$REVIEW_TEXT"
 import json, pathlib, sys
@@ -113,18 +120,20 @@ payload = {
     "humanWhatsappEvalSummaryPath": sys.argv[10],
     "humanWhatsappConversationEvalSummaryPath": sys.argv[11],
     "humanWhatsappResumeEvalSummaryPath": sys.argv[12],
-    "reviewPath": sys.argv[13],
-    "reviewJsonPath": sys.argv[14],
-    "evaluatorAgentId": sys.argv[15] or None,
-    "failedCommand": sys.argv[16] or None,
-    "selftestStatus": sys.argv[17] or None,
-    "selftestMode": sys.argv[18] or None,
-    "humanEvalStatus": sys.argv[19] or None,
-    "humanWhatsappEvalStatus": sys.argv[20] or None,
-    "humanWhatsappConversationStatus": sys.argv[21] or None,
-    "humanWhatsappResumeStatus": sys.argv[22] or None,
-    "nextUpgrade": sys.argv[23] or None,
-    "reviewText": sys.argv[24] or None,
+    "humanWhatsappResumeFailureEvalSummaryPath": sys.argv[13],
+    "reviewPath": sys.argv[14],
+    "reviewJsonPath": sys.argv[15],
+    "evaluatorAgentId": sys.argv[16] or None,
+    "failedCommand": sys.argv[17] or None,
+    "selftestStatus": sys.argv[18] or None,
+    "selftestMode": sys.argv[19] or None,
+    "humanEvalStatus": sys.argv[20] or None,
+    "humanWhatsappEvalStatus": sys.argv[21] or None,
+    "humanWhatsappConversationStatus": sys.argv[22] or None,
+    "humanWhatsappResumeStatus": sys.argv[23] or None,
+    "humanWhatsappResumeFailureStatus": sys.argv[24] or None,
+    "nextUpgrade": sys.argv[25] or None,
+    "reviewText": sys.argv[26] or None,
 }
 for summary_path in summary_paths:
     summary_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
@@ -157,6 +166,9 @@ bash "$HUMAN_WHATSAPP_CONVERSATION_EVAL_SCRIPT" >/dev/null
 echo "== human whatsapp resume eval =="
 bash "$HUMAN_WHATSAPP_RESUME_EVAL_SCRIPT" >/dev/null
 
+echo "== human whatsapp resume-failure eval =="
+bash "$HUMAN_WHATSAPP_RESUME_FAILURE_EVAL_SCRIPT" >/dev/null
+
 if [[ ! -f "$SELFTEST_SUMMARY_PATH" ]]; then
   echo "missing selftest summary at $SELFTEST_SUMMARY_PATH" >&2
   exit 1
@@ -177,16 +189,21 @@ if [[ ! -f "$HUMAN_WHATSAPP_RESUME_EVAL_SUMMARY_PATH" ]]; then
   echo "missing human whatsapp resume eval summary at $HUMAN_WHATSAPP_RESUME_EVAL_SUMMARY_PATH" >&2
   exit 1
 fi
+if [[ ! -f "$HUMAN_WHATSAPP_RESUME_FAILURE_EVAL_SUMMARY_PATH" ]]; then
+  echo "missing human whatsapp resume-failure eval summary at $HUMAN_WHATSAPP_RESUME_FAILURE_EVAL_SUMMARY_PATH" >&2
+  exit 1
+fi
 
 cp "$SELFTEST_SUMMARY_PATH" "$SELFTEST_SNAPSHOT_PATH"
 cp "$HUMAN_EVAL_SUMMARY_PATH" "$HUMAN_EVAL_SNAPSHOT_PATH"
 cp "$HUMAN_WHATSAPP_EVAL_SUMMARY_PATH" "$HUMAN_WHATSAPP_SNAPSHOT_PATH"
 cp "$HUMAN_WHATSAPP_CONVERSATION_EVAL_SUMMARY_PATH" "$HUMAN_WHATSAPP_CONVERSATION_SNAPSHOT_PATH"
 cp "$HUMAN_WHATSAPP_RESUME_EVAL_SUMMARY_PATH" "$HUMAN_WHATSAPP_RESUME_SNAPSHOT_PATH"
+cp "$HUMAN_WHATSAPP_RESUME_FAILURE_EVAL_SUMMARY_PATH" "$HUMAN_WHATSAPP_RESUME_FAILURE_SNAPSHOT_PATH"
 
-eval "$(python3 - <<'PY' "$SELFTEST_SUMMARY_PATH" "$HUMAN_EVAL_SUMMARY_PATH" "$HUMAN_WHATSAPP_EVAL_SUMMARY_PATH" "$HUMAN_WHATSAPP_CONVERSATION_EVAL_SUMMARY_PATH" "$HUMAN_WHATSAPP_RESUME_EVAL_SUMMARY_PATH"
+eval "$(python3 - <<'PY' "$SELFTEST_SUMMARY_PATH" "$HUMAN_EVAL_SUMMARY_PATH" "$HUMAN_WHATSAPP_EVAL_SUMMARY_PATH" "$HUMAN_WHATSAPP_CONVERSATION_EVAL_SUMMARY_PATH" "$HUMAN_WHATSAPP_RESUME_EVAL_SUMMARY_PATH" "$HUMAN_WHATSAPP_RESUME_FAILURE_EVAL_SUMMARY_PATH"
 import json, shlex, sys
-paths = sys.argv[1:6]
+paths = sys.argv[1:7]
 labels = [
     ("SELFTEST_STATUS", "status"),
     ("SELFTEST_MODE", "mode"),
@@ -194,12 +211,14 @@ labels = [
     ("HUMAN_WHATSAPP_EVAL_STATUS", "status"),
     ("HUMAN_WHATSAPP_CONVERSATION_EVAL_STATUS", "status"),
     ("HUMAN_WHATSAPP_RESUME_EVAL_STATUS", "status"),
+    ("HUMAN_WHATSAPP_RESUME_FAILURE_EVAL_STATUS", "status"),
 ]
 selftest = json.loads(open(paths[0], "r", encoding="utf-8").read())
 human = json.loads(open(paths[1], "r", encoding="utf-8").read())
 whatsapp = json.loads(open(paths[2], "r", encoding="utf-8").read())
 conversation = json.loads(open(paths[3], "r", encoding="utf-8").read())
 resume = json.loads(open(paths[4], "r", encoding="utf-8").read())
+resume_failure = json.loads(open(paths[5], "r", encoding="utf-8").read())
 values = {
     "SELFTEST_STATUS": selftest.get("status", ""),
     "SELFTEST_MODE": selftest.get("mode", ""),
@@ -207,6 +226,7 @@ values = {
     "HUMAN_WHATSAPP_EVAL_STATUS": whatsapp.get("status", ""),
     "HUMAN_WHATSAPP_CONVERSATION_EVAL_STATUS": conversation.get("status", ""),
     "HUMAN_WHATSAPP_RESUME_EVAL_STATUS": resume.get("status", ""),
+    "HUMAN_WHATSAPP_RESUME_FAILURE_EVAL_STATUS": resume_failure.get("status", ""),
 }
 for name, _ in labels:
     print(f"{name}={shlex.quote(str(values[name]))}")
@@ -233,6 +253,10 @@ if [[ "$HUMAN_WHATSAPP_RESUME_EVAL_STATUS" != "passed" ]]; then
   echo "human whatsapp resume eval did not pass: $HUMAN_WHATSAPP_RESUME_EVAL_STATUS" >&2
   exit 1
 fi
+if [[ "$HUMAN_WHATSAPP_RESUME_FAILURE_EVAL_STATUS" != "passed" ]]; then
+  echo "human whatsapp resume-failure eval did not pass: $HUMAN_WHATSAPP_RESUME_FAILURE_EVAL_STATUS" >&2
+  exit 1
+fi
 
 echo "== evaluator review =="
 EVALUATOR_SESSION="$(agent_main_session_jsonl "$EVALUATOR_AGENT_ID")"
@@ -243,7 +267,7 @@ else
 fi
 
 run_evaluator_agent_json "$REVIEW_JSON" \
-  --message "Du bist der skeptische Evaluator in einer lokalen Agent-Upgrade-Schleife. Lies zuerst per read exakt $SELFTEST_SNAPSHOT_PATH, $HUMAN_EVAL_SNAPSHOT_PATH, $HUMAN_WHATSAPP_SNAPSHOT_PATH, $HUMAN_WHATSAPP_CONVERSATION_SNAPSHOT_PATH und $HUMAN_WHATSAPP_RESUME_SNAPSHOT_PATH. Erstelle oder überschreibe danach exakt die Datei $REVIEW_PATH. Inhalt: Markdown mit '# Intelligenz-Review', '## Stärken', '## Schwächen' und '## Nächster Upgrade-Schritt'. Bewerte nur das beobachtete Verhalten dieser Läufe. Berücksichtige ausdrücklich auch Gesprächsgedächtnis, Nutzersprache und Artefaktqualität im WhatsApp-Mehrturn-Lauf sowie die Wiederaufnahme nach Unterbrechung im Resume-Lauf. Schreibe auf Deutsch, konkret und knapp. Keine Dateipfade, keine JSON-Feldnamen, keine Labels wie DONE oder IN ARBEIT. Unter 'Stärken' und 'Schwächen' nur kurze Bullets. Unter 'Nächster Upgrade-Schritt' genau ein fokussierter nächster Verbesserungsschritt als normaler kurzer Absatz. Lies die geschriebene Datei danach noch einmal per read zur Verifikation. Antworte exakt INTELLIGENCE_LOOP_DONE."
+  --message "Du bist der skeptische Evaluator in einer lokalen Agent-Upgrade-Schleife. Lies zuerst per read exakt $SELFTEST_SNAPSHOT_PATH, $HUMAN_EVAL_SNAPSHOT_PATH, $HUMAN_WHATSAPP_SNAPSHOT_PATH, $HUMAN_WHATSAPP_CONVERSATION_SNAPSHOT_PATH, $HUMAN_WHATSAPP_RESUME_SNAPSHOT_PATH und $HUMAN_WHATSAPP_RESUME_FAILURE_SNAPSHOT_PATH. Erstelle oder überschreibe danach exakt die Datei $REVIEW_PATH. Inhalt: Markdown mit '# Intelligenz-Review', '## Stärken', '## Schwächen' und '## Nächster Upgrade-Schritt'. Bewerte nur das beobachtete Verhalten dieser Läufe. Berücksichtige ausdrücklich auch Gesprächsgedächtnis, Nutzersprache und Artefaktqualität im WhatsApp-Mehrturn-Lauf, die Wiederaufnahme nach Unterbrechung im Resume-Lauf und den harten Kontextbruch mit Rekonstruktion aus sessions_history im Resume-Failure-Lauf. Schreibe auf Deutsch, konkret und knapp. Keine Dateipfade, keine JSON-Feldnamen, keine Labels wie DONE oder IN ARBEIT. Unter 'Stärken' und 'Schwächen' nur kurze Bullets. Unter 'Nächster Upgrade-Schritt' genau ein fokussierter nächster Verbesserungsschritt als normaler kurzer Absatz. Lies die geschriebene Datei danach noch einmal per read zur Verifikation. Antworte exakt INTELLIGENCE_LOOP_DONE."
 
 if [[ -z "$EVALUATOR_SESSION" || ! -f "$EVALUATOR_SESSION" ]]; then
   EVALUATOR_SESSION="$(wait_for_agent_main_session_jsonl "$EVALUATOR_AGENT_ID" 40 1)"
@@ -256,6 +280,7 @@ wait_for_session_pattern_after_line "$EVALUATOR_SESSION" "$EVALUATOR_BEFORE_LINE
 wait_for_session_pattern_after_line "$EVALUATOR_SESSION" "$EVALUATOR_BEFORE_LINES" "$HUMAN_WHATSAPP_SNAPSHOT_PATH" 80 1
 wait_for_session_pattern_after_line "$EVALUATOR_SESSION" "$EVALUATOR_BEFORE_LINES" "$HUMAN_WHATSAPP_CONVERSATION_SNAPSHOT_PATH" 80 1
 wait_for_session_pattern_after_line "$EVALUATOR_SESSION" "$EVALUATOR_BEFORE_LINES" "$HUMAN_WHATSAPP_RESUME_SNAPSHOT_PATH" 80 1
+wait_for_session_pattern_after_line "$EVALUATOR_SESSION" "$EVALUATOR_BEFORE_LINES" "$HUMAN_WHATSAPP_RESUME_FAILURE_SNAPSHOT_PATH" 80 1
 wait_for_session_pattern_after_line "$EVALUATOR_SESSION" "$EVALUATOR_BEFORE_LINES" '"name":"apply_patch"|"name":"edit"|"name":"write"' 80 1
 wait_for_session_pattern_after_line "$EVALUATOR_SESSION" "$EVALUATOR_BEFORE_LINES" "$REVIEW_PATH" 80 1
 

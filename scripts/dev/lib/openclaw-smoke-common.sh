@@ -61,16 +61,34 @@ run_openclaw_agent_json() {
   shift
   local attempts="${OPENCLAW_SELFTEST_AGENT_RETRIES:-3}"
   local delay="${OPENCLAW_SELFTEST_AGENT_RETRY_DELAY:-2}"
+  local timeout_seconds="${OPENCLAW_SELFTEST_AGENT_TIMEOUT_SECONDS:-240}"
   local attempt
   local tmp_output
   local status
+  local args=("$@")
+  local has_timeout=0
+
+  for ((attempt = 0; attempt < ${#args[@]}; attempt++)); do
+    if [[ "${args[$attempt]}" == "--timeout" ]]; then
+      has_timeout=1
+      break
+    fi
+  done
 
   for attempt in $(seq 1 "$attempts"); do
     tmp_output="$(mktemp "${TMPDIR:-/tmp}/openclaw-agent-json.XXXXXX")"
-    if openclaw agent "$@" --json >"$tmp_output" 2>&1; then
-      status=0
+    if (( has_timeout )); then
+      if openclaw agent "${args[@]}" --json >"$tmp_output" 2>&1; then
+        status=0
+      else
+        status=$?
+      fi
     else
-      status=$?
+      if openclaw agent "${args[@]}" --timeout "$timeout_seconds" --json >"$tmp_output" 2>&1; then
+        status=0
+      else
+        status=$?
+      fi
     fi
 
     if json_payload_has_result "$tmp_output"; then
@@ -136,7 +154,7 @@ openclaw_gateway_restart_with_retry() {
       return 0
     fi
 
-    if rg -q 'Gateway service not loaded\.|Start with: openclaw gateway install|Service not installed\. Run: openclaw gateway install' "$tmp_output"; then
+    if rg -q 'Gateway service not loaded\.|Start with: openclaw gateway install|Service not installed\. Run: openclaw gateway install|Could not find service "ai\.openclaw\.gateway"' "$tmp_output"; then
       rm -f "$tmp_output"
       if openclaw_gateway_install_and_start; then
         return 0
@@ -422,6 +440,31 @@ session_line_count() {
   wc -l < "$session_file" | tr -d ' '
 }
 
+session_pattern_line_after_line() {
+  local session_file="$1"
+  local start_line="$2"
+  local pattern="$3"
+  python3 - <<'PY' "$session_file" "$start_line" "$pattern"
+import re
+import sys
+from pathlib import Path
+
+session_file = Path(sys.argv[1])
+start_line = int(sys.argv[2])
+pattern = re.compile(sys.argv[3])
+if not session_file.is_file():
+    raise SystemExit(1)
+with session_file.open("r", encoding="utf-8") as handle:
+    for line_number, raw_line in enumerate(handle, start=1):
+        if line_number <= start_line:
+            continue
+        if pattern.search(raw_line):
+            print(line_number)
+            raise SystemExit(0)
+raise SystemExit(1)
+PY
+}
+
 assert_latest_session_pattern() {
   local agent_id="$1"
   local pattern="$2"
@@ -455,7 +498,7 @@ assert_session_pattern_after_line() {
     echo "missing session log $session_file" >&2
     exit 1
   fi
-  if ! tail -n "+$((start_line + 1))" "$session_file" | rg -q "$pattern"; then
+  if ! session_pattern_line_after_line "$session_file" "$start_line" "$pattern" >/dev/null; then
     echo "expected pattern $pattern after line $start_line in $session_file" >&2
     exit 1
   fi
@@ -468,7 +511,7 @@ wait_for_session_pattern_after_line() {
   local attempts="${4:-40}"
   local delay="${5:-1}"
   for _ in $(seq 1 "$attempts"); do
-    if [[ -n "$session_file" && -f "$session_file" ]] && tail -n "+$((start_line + 1))" "$session_file" | rg -q "$pattern"; then
+    if [[ -n "$session_file" && -f "$session_file" ]] && session_pattern_line_after_line "$session_file" "$start_line" "$pattern" >/dev/null; then
       return 0
     fi
     sleep "$delay"

@@ -33,7 +33,7 @@ const sharedPathPrepend = [
 ];
 
 const agentIds = ["oc-builder", "oc-github", "claw-code"];
-const humanEvalAgentIds = ["oc-human-main", "oc-human-builder"];
+const humanEvalAgentIds = ["oc-human-main", "oc-human-builder", "oc-human-recovery"];
 
 await ensureExists(path.dirname(configPath), "OpenClaw config directory");
 await ensureExists(parityRoot, "claw-code parity repository");
@@ -107,10 +107,12 @@ function mutateConfig(config) {
   config.agents.list = Array.isArray(config.agents.list) ? config.agents.list : [];
   config.tools ??= {};
   config.tools.agentToAgent ??= {};
+  config.tools.sessions ??= {};
   config.agents.defaults.subagents ??= {};
   config.agents.defaults.sandbox ??= {};
   config.agents.defaults.sandbox.mode = "off";
   config.agents.defaults.subagents.model = mainPrimaryModel;
+  config.tools.sessions.visibility = "all";
   config.tools.deny = Array.isArray(config.tools.deny)
     ? config.tools.deny.filter(
         (entry) => !["group:fs", "group:runtime", "group:web"].includes(String(entry).trim()),
@@ -270,6 +272,30 @@ function mutateConfig(config) {
         },
       },
     },
+    {
+      id: "oc-human-recovery",
+      name: "OpenClaw Human Recovery",
+      workspace: repoRoot,
+      model: {
+        primary: specialistModel.primary,
+        fallbacks: [...specialistModel.fallbacks],
+      },
+      skills: ["main-tool-discipline", "main-human-operator", "session-logs"],
+      identity: {
+        name: "OpenClaw Human Recovery",
+        theme: "Fresh recovery-only reconstruction over session history",
+        emoji: "🧷",
+      },
+      tools: {
+        profile: "coding",
+        fs: {
+          workspaceOnly: true,
+        },
+        exec: {
+          pathPrepend: sharedPathPrepend,
+        },
+      },
+    },
   ];
 
   for (const agent of desiredAgents) {
@@ -277,7 +303,13 @@ function mutateConfig(config) {
   }
 
   const allow = Array.isArray(config.tools.agentToAgent.allow) ? config.tools.agentToAgent.allow : [];
-  config.tools.agentToAgent.allow = uniqueStrings([...allow, "oc-selftest", ...agentIds, ...humanEvalAgentIds]);
+  config.tools.agentToAgent.allow = uniqueStrings([
+    ...allow,
+    "main",
+    "oc-selftest",
+    ...agentIds,
+    ...humanEvalAgentIds,
+  ]);
 
   const mainAgent = config.agents.list.find((entry) => entry && entry.id === "main");
   if (mainAgent) {
