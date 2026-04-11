@@ -36,44 +36,109 @@ module.exports = {
   name: "Local Project Scout",
   description: "Short-circuit project and Mac discovery questions with a deterministic local scan.",
   register(api) {
+    api.on("before_dispatch", async (event, ctx) => {
+      const text = buildProjectScoutReply({
+        texts: [event && event.body, event && event.content],
+        sessionKey: (ctx && ctx.sessionKey) || (event && event.sessionKey),
+      });
+      if (!text) {
+        return;
+      }
+      return {
+        handled: true,
+        text,
+      };
+    });
+
     api.on("before_agent_reply", async (event, ctx) => {
-      if (!shouldHandleProjectScout(event, ctx)) {
+      const text = buildProjectScoutReply({
+        texts: [event && event.cleanedBody],
+        agentId: ctx && ctx.agentId,
+        sessionKey: ctx && ctx.sessionKey,
+      });
+      if (!text) {
         return;
       }
-
-      const projectCards = collectProjectCards();
-      if (projectCards.length < 2) {
-        return;
-      }
-
-      const selected = projectCards.slice(0, 3);
-      const questionTargets = selected.slice(0, 3).map((card) => card.name).join(", ");
-      const lines = selected.map((card) => `- ${card.name} - ${card.hint}`);
-      lines.push(`- Womit soll ich als Naechstes weitermachen: ${questionTargets}?`);
-
       return {
         handled: true,
         reason: "local-project-scout",
         reply: {
-          text: lines.join("\n"),
+          text,
         },
       };
     });
   },
 };
 
-function shouldHandleProjectScout(event, ctx) {
-  if (ctx && typeof ctx.agentId === "string" && !["main", "oc-human-main"].includes(ctx.agentId)) {
-    return false;
+function buildProjectScoutReply(params) {
+  if (!shouldTargetMainHumanAgent(params)) {
+    return "";
   }
-  const cleanedBody = normalizeText(event && event.cleanedBody);
+  const cleanedBody = normalizeText(selectRelevantScoutText(params && params.texts));
+  if (!matchesProjectScoutIntent(cleanedBody)) {
+    return "";
+  }
+
+  const projectCards = collectProjectCards();
+  if (projectCards.length < 2) {
+    return "";
+  }
+
+  const selected = projectCards.slice(0, 3);
+  const questionTargets = selected.slice(0, 3).map((card) => card.name).join(", ");
+  const lines = selected.map((card) => `- ${card.name} - ${card.hint}`);
+  lines.push(`- Womit soll ich als Naechstes weitermachen: ${questionTargets}?`);
+  return lines.join("\n");
+}
+
+function shouldTargetMainHumanAgent(params) {
+  const agentId = params && typeof params.agentId === "string" ? params.agentId.trim() : "";
+  if (agentId) {
+    return ["main", "oc-human-main"].includes(agentId);
+  }
+  const sessionKey =
+    params && typeof params.sessionKey === "string" ? params.sessionKey.trim().toLowerCase() : "";
+  if (!sessionKey) {
+    return true;
+  }
+  return sessionKey.startsWith("agent:main:") || sessionKey.startsWith("agent:oc-human-main:");
+}
+
+function selectRelevantScoutText(values) {
+  const candidates = Array.isArray(values) ? values : [];
+  let best = "";
+  for (const value of candidates) {
+    const current = normalizeText(value);
+    if (!current) {
+      continue;
+    }
+    if (matchesProjectScoutIntent(current)) {
+      return current;
+    }
+    if (current.length > best.length) {
+      best = current;
+    }
+  }
+  return best;
+}
+
+function matchesProjectScoutIntent(cleanedBody) {
   if (!cleanedBody) {
     return false;
   }
+  if (
+    /(meine projekte|auf meinen mac|auf meinem mac|was ist hier relevant|was geht hier ab|was haben wir alles dran gearbeitet|was hast du gearbeitet heute an meine projekte)/.test(
+      cleanedBody,
+    )
+  ) {
+    return true;
+  }
   return (
-    /(welche|was|guck|schau|zeig|analys)/.test(cleanedBody) &&
+    /(welche|was|woran|guck|schau|zeig|analys|status|relevant|gearbeitet|abgeht|dran gearbeitet)/.test(
+      cleanedBody,
+    ) &&
     /(projekt|projekte|repo|repos|mac|workspace|lokal|local|playground|code)/.test(cleanedBody)
-  ) || /(meine projekte|auf meinen mac|auf meinem mac|was ist hier relevant|was geht hier ab)/.test(cleanedBody);
+  );
 }
 
 function collectProjectCards() {

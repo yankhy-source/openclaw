@@ -14,54 +14,86 @@ const workspaceRoot = process.env.OPENCLAW_PROJECT_SCOUT_ROOT_B ?? path.join(os.
 const plugin = require(pluginPath);
 
 let beforeAgentReplyHandler = null;
+let beforeDispatchHandler = null;
 plugin.register({
   on(hookName, handler) {
+    if (hookName === "before_dispatch") {
+      beforeDispatchHandler = handler;
+    }
     if (hookName === "before_agent_reply") {
       beforeAgentReplyHandler = handler;
     }
   },
 });
 
+assert.equal(typeof beforeDispatchHandler, "function", "before_dispatch hook was not registered");
 assert.equal(typeof beforeAgentReplyHandler, "function", "before_agent_reply hook was not registered");
 
-const result = await beforeAgentReplyHandler(
+const prompt =
+  "Ich bin der Nutzer. Schau jetzt aktiv auf meinen Mac und sage mir, welche Projekte hier gerade relevant sind.";
+const dispatchResult = await beforeDispatchHandler(
   {
-    cleanedBody:
-      "Ich bin der Nutzer. Schau jetzt aktiv auf meinen Mac und sage mir, welche Projekte hier gerade relevant sind.",
+    content: prompt,
+    body: prompt,
+    channel: "whatsapp",
+    sessionKey: "agent:main:whatsapp:direct:+4917623606147",
+  },
+  {
+    channelId: "whatsapp",
+    conversationId: "+4917623606147",
+    sessionKey: "agent:main:whatsapp:direct:+4917623606147",
+    senderId: "+4917623606147",
+  },
+);
+const replyResult = await beforeAgentReplyHandler(
+  {
+    cleanedBody: prompt,
   },
   {
     agentId: "main",
+    sessionKey: "agent:main:whatsapp:direct:+4917623606147",
   },
 );
 
-assert.equal(result?.handled, true, "hook did not claim the project scout prompt");
-assert.equal(typeof result?.reply?.text, "string", "hook did not return a text reply");
-
-const text = result.reply.text.trim();
-const lines = text.split(/\r?\n/).filter(Boolean);
-assert.equal(lines.length, 4, `expected 4 bullet lines, got ${lines.length}`);
-assert(lines.every((line) => line.startsWith("- ")), `reply must use plain bullets: ${text}`);
-assert(lines.slice(0, 3).every((line) => !line.startsWith("- -")), `reply must not double-prefix bullets: ${text}`);
-
-const expectedNames = collectExpectedNames([playgroundRoot, workspaceRoot]);
-const mentioned = expectedNames.filter((name) => text.toLowerCase().includes(name.toLowerCase()));
-assert(mentioned.length >= 2, `expected at least two real project names in reply: ${text}`);
-
-const blocked = ["ai_assistant", "cl_image_processing", "nlp_experiments"];
-assert(blocked.every((token) => !text.toLowerCase().includes(token)), `reply still hallucinates placeholder repos: ${text}`);
+const dispatchText = assertScoutReply("before_dispatch", dispatchResult?.text);
+const replyText = assertScoutReply("before_agent_reply", replyResult?.reply?.text);
+assert.equal(replyText, dispatchText, "before_dispatch and before_agent_reply should agree");
 
 console.log(
   JSON.stringify(
     {
       status: "passed",
       pluginPath,
-      mentioned,
-      text,
+      dispatchText,
+      replyText,
     },
     null,
     2,
   ),
 );
+
+function assertScoutReply(label, rawText) {
+  assert.equal(typeof rawText, "string", `${label} hook did not return a text reply`);
+  const text = rawText.trim();
+  const lines = text.split(/\r?\n/).filter(Boolean);
+  assert.equal(lines.length, 4, `${label}: expected 4 bullet lines, got ${lines.length}`);
+  assert(lines.every((line) => line.startsWith("- ")), `${label}: reply must use plain bullets: ${text}`);
+  assert(
+    lines.slice(0, 3).every((line) => !line.startsWith("- -")),
+    `${label}: reply must not double-prefix bullets: ${text}`,
+  );
+
+  const expectedNames = collectExpectedNames([playgroundRoot, workspaceRoot]);
+  const mentioned = expectedNames.filter((name) => text.toLowerCase().includes(name.toLowerCase()));
+  assert(mentioned.length >= 2, `${label}: expected at least two real project names in reply: ${text}`);
+
+  const blocked = ["ai_assistant", "cl_image_processing", "nlp_experiments"];
+  assert(
+    blocked.every((token) => !text.toLowerCase().includes(token)),
+    `${label}: reply still hallucinates placeholder repos: ${text}`,
+  );
+  return text;
+}
 
 function collectExpectedNames(roots) {
   const names = [];
