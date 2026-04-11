@@ -22,6 +22,8 @@ TURN1_JSON=""
 TURN2_JSON=""
 TURN3_JSON=""
 ARTIFACT_PATH=""
+TURN2_CONTEXT_PATH=""
+TURN3_CONTEXT_PATH=""
 SELF_E164=""
 TURN1_TEXT=""
 TURN2_TEXT=""
@@ -29,6 +31,12 @@ TURN3_TEXT=""
 ARTIFACT_TEXT=""
 BUILDER_SESSION=""
 ARTIFACT_ROUTE="unknown"
+MAIN_SESSION_KEY=""
+TURN2_CONTEXT_MODE="memory"
+TURN3_CONTEXT_MODE="memory"
+VERIFIED_WHATSAPP_TOKEN=""
+VERIFIED_MANAGER_SESSION_ID=""
+VERIFIED_SELFTEST_ARTIFACT_ROOT=""
 CONVERSATION_MARKER="nebelstern-$(python3 - <<'PY'
 import uuid
 print(uuid.uuid4().hex[:10])
@@ -58,6 +66,8 @@ TURN1_JSON="$EVAL_ROOT/turn1-status.json"
 TURN2_JSON="$EVAL_ROOT/turn2-plan.json"
 TURN3_JSON="$EVAL_ROOT/turn3-artifact.json"
 ARTIFACT_PATH="$EVAL_ROOT/team-update.md"
+TURN2_CONTEXT_PATH="$EVAL_ROOT/turn2-context.json"
+TURN3_CONTEXT_PATH="$EVAL_ROOT/turn3-context.json"
 
 source "$SCRIPT_DIR/lib/openclaw-smoke-common.sh"
 
@@ -223,7 +233,11 @@ write_eval_summary() {
     "$SELF_E164" \
     "$WHATSAPP_AGENT_ID" \
     "$BUILDER_AGENT_ID" \
-    "$BUILDER_SESSION"
+    "$BUILDER_SESSION" \
+    "$VERIFIED_WHATSAPP_TOKEN" \
+    "$VERIFIED_MANAGER_SESSION_ID" \
+    "$TURN2_CONTEXT_MODE" \
+    "$TURN3_CONTEXT_MODE"
 import json, pathlib, sys
 
 summary_paths = [pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])]
@@ -250,6 +264,10 @@ payload = {
     "mainAgentId": sys.argv[21] or None,
     "builderAgentId": sys.argv[22] or None,
     "builderSessionPath": sys.argv[23] or None,
+    "verifiedWhatsappToken": sys.argv[24] or None,
+    "verifiedManagerSessionId": sys.argv[25] or None,
+    "turn2ContextMode": sys.argv[26] or None,
+    "turn3ContextMode": sys.argv[27] or None,
 }
 for summary_path in summary_paths:
     summary_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
@@ -279,6 +297,7 @@ if [[ ! -f "$SUMMARY_PATH" ]]; then
 fi
 
 cp "$SUMMARY_PATH" "$SUMMARY_SNAPSHOT_PATH"
+eval "$(verify_live_selftest_summary_snapshot "$SUMMARY_SNAPSHOT_PATH")"
 printf 'before\n' >"$ARTIFACT_PATH"
 TURN1_SOURCE_PATH="$SUMMARY_SNAPSHOT_PATH"
 if [[ "$WHATSAPP_AGENT_ID" == "main" ]]; then
@@ -290,6 +309,7 @@ echo "== gateway health =="
 openclaw_ensure_gateway_healthy >/dev/null
 
 SELF_E164="$(openclaw_whatsapp_self_e164)"
+MAIN_SESSION_KEY="agent:${WHATSAPP_AGENT_ID}:main"
 
 echo "== whatsapp conversation turn 1 =="
 MAIN_SESSION="$(agent_main_session_jsonl "$WHATSAPP_AGENT_ID")"
@@ -361,11 +381,58 @@ PY
 printf '%s\n' "$TURN1_TEXT"
 wait_for_session_pattern_after_line "$MAIN_SESSION" "$MAIN_BEFORE_LINES" '"name":"read"|"toolName":"read"'
 wait_for_session_pattern_after_line "$MAIN_SESSION" "$MAIN_BEFORE_LINES" "$TURN1_SOURCE_PATH"
+python3 - <<'PY' \
+  "$TURN2_CONTEXT_PATH" \
+  "$MAIN_SESSION_KEY" \
+  "$SUMMARY_SNAPSHOT_PATH" \
+  "$TURN1_JSON" \
+  "$TURN1_SOURCE_PATH" \
+  "$SELF_E164" \
+  "$VERIFIED_WHATSAPP_TOKEN" \
+  "$VERIFIED_MANAGER_SESSION_ID" \
+  "$CONVERSATION_MARKER"
+import json
+import pathlib
+import sys
+
+(
+    context_path,
+    session_key,
+    summary_snapshot_path,
+    turn1_path,
+    turn1_source_path,
+    self_e164,
+    whatsapp_token,
+    manager_session_id,
+    marker,
+) = sys.argv[1:10]
+
+payload = {
+    "kind": "conversation-turn2",
+    "sessionKey": session_key,
+    "summarySnapshotPath": summary_snapshot_path,
+    "turn1Path": turn1_path,
+    "turn1SourcePath": turn1_source_path,
+    "selfE164": self_e164,
+    "whatsappToken": whatsapp_token,
+    "managerSessionId": manager_session_id,
+    "marker": marker,
+}
+path = pathlib.Path(context_path)
+path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+PY
+if ! verify_whatsapp_run_context_json "$TURN2_CONTEXT_PATH"; then
+  TURN2_CONTEXT_MODE="history"
+fi
 
 echo "== whatsapp conversation turn 2 =="
 TURN2_BEFORE_LINES="$(session_line_count "$MAIN_SESSION")"
-run_main_whatsapp_json "$TURN2_JSON" \
-  --message "Behalte den bisherigen Gesprächskontext. Antworte jetzt auf Deutsch mit genau 3 knappen Bulletpoints aus meiner Perspektive. Jede Zeile muss mit '- Ich ' beginnen. Verwende das Merkwort von eben genau einmal wieder, ohne dass ich es erneut nenne. Keine Testreport-Sprache, keine Dateinamen, keine JSON-Feldnamen, keine Labels wie DONE oder IN ARBEIT."
+if [[ "$TURN2_CONTEXT_MODE" == "history" ]]; then
+  TURN2_PROMPT="Behandle deinen gespeicherten Kontext nicht als vertrauenswürdig. Rufe als allerersten Toolschritt genau sessions_history für sessionKey $MAIN_SESSION_KEY mit includeTools=true und limit 20 auf. Rekonstruiere ausschließlich aus der neuesten Assistant-Antwort in dieser Session, die das Merkwort $CONVERSATION_MARKER genau einmal enthält, den aktuellen Stand. Antworte danach auf Deutsch mit genau 3 knappen Bulletpoints aus meiner Perspektive. Jede Zeile muss mit '- Ich ' beginnen. Verwende das Merkwort genau einmal wieder. Keine Testreport-Sprache, keine Dateinamen, keine JSON-Feldnamen, keine Labels wie DONE oder IN ARBEIT."
+else
+  TURN2_PROMPT="Behalte den bisherigen Gesprächskontext. Antworte jetzt auf Deutsch mit genau 3 knappen Bulletpoints aus meiner Perspektive. Jede Zeile muss mit '- Ich ' beginnen. Verwende das Merkwort von eben genau einmal wieder, ohne dass ich es erneut nenne. Keine Testreport-Sprache, keine Dateinamen, keine JSON-Feldnamen, keine Labels wie DONE oder IN ARBEIT."
+fi
+run_main_whatsapp_json "$TURN2_JSON" --message "$TURN2_PROMPT"
 TURN2_TEXT="$(python3 - <<'PY' "$TURN2_JSON" "$CONVERSATION_MARKER"
 import json, sys
 from pathlib import Path
@@ -416,11 +483,67 @@ print(text)
 PY
 )"
 printf '%s\n' "$TURN2_TEXT"
+if [[ "$TURN2_CONTEXT_MODE" == "history" ]]; then
+  wait_for_session_pattern_after_line "$MAIN_SESSION" "$TURN2_BEFORE_LINES" '"name":"sessions_history"|"toolName":"sessions_history"'
+fi
+python3 - <<'PY' \
+  "$TURN3_CONTEXT_PATH" \
+  "$MAIN_SESSION_KEY" \
+  "$SUMMARY_SNAPSHOT_PATH" \
+  "$TURN1_JSON" \
+  "$TURN2_JSON" \
+  "$ARTIFACT_PATH" \
+  "$SELF_E164" \
+  "$VERIFIED_WHATSAPP_TOKEN" \
+  "$VERIFIED_MANAGER_SESSION_ID" \
+  "$CONVERSATION_MARKER" \
+  "$BUILDER_AGENT_ID"
+import json
+import pathlib
+import sys
+
+(
+    context_path,
+    session_key,
+    summary_snapshot_path,
+    turn1_path,
+    turn2_path,
+    artifact_path,
+    self_e164,
+    whatsapp_token,
+    manager_session_id,
+    marker,
+    builder_agent_id,
+) = sys.argv[1:12]
+
+payload = {
+    "kind": "conversation-turn3",
+    "sessionKey": session_key,
+    "summarySnapshotPath": summary_snapshot_path,
+    "turn1Path": turn1_path,
+    "turn2Path": turn2_path,
+    "artifactPath": artifact_path,
+    "selfE164": self_e164,
+    "whatsappToken": whatsapp_token,
+    "managerSessionId": manager_session_id,
+    "marker": marker,
+    "builderAgentId": builder_agent_id,
+}
+path = pathlib.Path(context_path)
+path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+PY
+if ! verify_whatsapp_run_context_json "$TURN3_CONTEXT_PATH"; then
+  TURN3_CONTEXT_MODE="history"
+fi
 
 echo "== whatsapp conversation turn 3 =="
 TURN3_BEFORE_LINES="$(session_line_count "$MAIN_SESSION")"
-run_main_whatsapp_json "$TURN3_JSON" \
-  --message "Erstell mir jetzt einen kurzen Team-Update-Entwurf als Datei. Nutze dafür zwingend per sessions_spawn einen $BUILDER_AGENT_ID-Subagenten. Nur der $BUILDER_AGENT_ID-Subagent darf die Datei ändern; du selbst darfst $ARTIFACT_PATH nicht direkt schreiben oder überschreiben. Der Child-Task muss zuerst per read exakt $SUMMARY_SNAPSHOT_PATH lesen und danach exakt die bereits existierende Datei $ARTIFACT_PATH überschreiben. Inhalt: Markdown mit '# Team-Update', '## Stand' und '## Nächste Schritte'. Schreib kurz, freundlich und auf Deutsch. Nutze das Merkwort aus dem bisherigen Gespräch genau einmal im Dateiinhalt, ohne dass ich es neu nenne. Keine Testreport-Sprache, keine Dateinamen, keine JSON-Feldnamen, keine Labels wie DONE oder IN ARBEIT. Lies die geschriebene Datei danach noch einmal per read zur Verifikation. Antworte mir danach auf Deutsch in genau 1 kurzen Satz, dass der Entwurf jetzt erstellt wird und gleich bereit ist. Nenne keine Dateipfade und verwende das Merkwort in der Chat-Antwort nicht erneut."
+if [[ "$TURN3_CONTEXT_MODE" == "history" ]]; then
+  TURN3_PROMPT="Behandle deinen gespeicherten Kontext nicht als vertrauenswürdig. Rufe als allerersten Toolschritt genau sessions_history für sessionKey $MAIN_SESSION_KEY mit includeTools=true und limit 30 auf. Rekonstruiere ausschließlich aus der neuesten zusammenhängenden Folge aus User- und Assistant-Nachrichten, in der das Merkwort $CONVERSATION_MARKER vorkommt, den aktuellen Stand. Erstell mir danach einen kurzen Team-Update-Entwurf als Datei. Nutze dafür zwingend per sessions_spawn einen $BUILDER_AGENT_ID-Subagenten. Nur der $BUILDER_AGENT_ID-Subagent darf die Datei ändern; du selbst darfst $ARTIFACT_PATH nicht direkt schreiben oder überschreiben. Der Child-Task muss zuerst per read exakt $SUMMARY_SNAPSHOT_PATH lesen und danach exakt die bereits existierende Datei $ARTIFACT_PATH überschreiben. Inhalt: Markdown mit '# Team-Update', '## Stand' und '## Nächste Schritte'. Schreib kurz, freundlich und auf Deutsch. Nutze das Merkwort genau einmal im Dateiinhalt. Keine Testreport-Sprache, keine Dateinamen, keine JSON-Feldnamen, keine Labels wie DONE oder IN ARBEIT. Lies die geschriebene Datei danach noch einmal per read zur Verifikation. Antworte mir danach auf Deutsch in genau 1 kurzen Satz, dass der Entwurf jetzt erstellt wird und gleich bereit ist. Nenne keine Dateipfade und verwende das Merkwort in der Chat-Antwort nicht erneut."
+else
+  TURN3_PROMPT="Erstell mir jetzt einen kurzen Team-Update-Entwurf als Datei. Nutze dafür zwingend per sessions_spawn einen $BUILDER_AGENT_ID-Subagenten. Nur der $BUILDER_AGENT_ID-Subagent darf die Datei ändern; du selbst darfst $ARTIFACT_PATH nicht direkt schreiben oder überschreiben. Der Child-Task muss zuerst per read exakt $SUMMARY_SNAPSHOT_PATH lesen und danach exakt die bereits existierende Datei $ARTIFACT_PATH überschreiben. Inhalt: Markdown mit '# Team-Update', '## Stand' und '## Nächste Schritte'. Schreib kurz, freundlich und auf Deutsch. Nutze das Merkwort aus dem bisherigen Gespräch genau einmal im Dateiinhalt, ohne dass ich es neu nenne. Keine Testreport-Sprache, keine Dateinamen, keine JSON-Feldnamen, keine Labels wie DONE oder IN ARBEIT. Lies die geschriebene Datei danach noch einmal per read zur Verifikation. Antworte mir danach auf Deutsch in genau 1 kurzen Satz, dass der Entwurf jetzt erstellt wird und gleich bereit ist. Nenne keine Dateipfade und verwende das Merkwort in der Chat-Antwort nicht erneut."
+fi
+run_main_whatsapp_json "$TURN3_JSON" --message "$TURN3_PROMPT"
 TURN3_TEXT="$(python3 - <<'PY' "$TURN3_JSON" "$CONVERSATION_MARKER" "$ARTIFACT_PATH"
 import json, sys
 from pathlib import Path
@@ -474,6 +597,9 @@ print(text)
 PY
 )"
 printf '%s\n' "$TURN3_TEXT"
+if [[ "$TURN3_CONTEXT_MODE" == "history" ]]; then
+  wait_for_session_pattern_after_line "$MAIN_SESSION" "$TURN3_BEFORE_LINES" '"name":"sessions_history"|"toolName":"sessions_history"'
+fi
 
 if session_pattern_after_line_with_retry "$MAIN_SESSION" "$TURN3_BEFORE_LINES" '"name":"sessions_spawn"|"toolName":"sessions_spawn"' 120 1; then
   if BUILDER_SESSION="$(resolve_child_session_after_line "$MAIN_SESSION" "$TURN3_BEFORE_LINES" "$BUILDER_AGENT_ID" "$ARTIFACT_PATH" 120 1)"; then

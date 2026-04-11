@@ -15,12 +15,16 @@ SUMMARY_SNAPSHOT_OVERRIDE="${OPENCLAW_HUMAN_WHATSAPP_SUMMARY_SNAPSHOT_PATH:-}"
 SUMMARY_SNAPSHOT_PATH=""
 STATUS_JSON=""
 PLAN_JSON=""
+STATUS_CONTEXT_PATH=""
 SELF_E164=""
 EVAL_STARTED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 EVAL_STATUS="failed"
 EVAL_FAILED_COMMAND=""
 STATUS_TEXT=""
 PLAN_TEXT=""
+VERIFIED_WHATSAPP_TOKEN=""
+VERIFIED_MANAGER_SESSION_ID=""
+VERIFIED_SELFTEST_ARTIFACT_ROOT=""
 
 if [[ -d "$NODE22_BIN" ]]; then
   PATH="$NODE22_BIN:$PATH"
@@ -40,6 +44,7 @@ else
 fi
 STATUS_JSON="$EVAL_ROOT/status.json"
 PLAN_JSON="$EVAL_ROOT/plan.json"
+STATUS_CONTEXT_PATH="$EVAL_ROOT/status-context.json"
 
 source "$SCRIPT_DIR/lib/openclaw-smoke-common.sh"
 
@@ -79,7 +84,9 @@ write_eval_summary() {
     "$EVAL_FAILED_COMMAND" \
     "$STATUS_TEXT" \
     "$PLAN_TEXT" \
-    "$SELF_E164"
+    "$SELF_E164" \
+    "$VERIFIED_WHATSAPP_TOKEN" \
+    "$VERIFIED_MANAGER_SESSION_ID"
 import json, pathlib, sys
 
 summary_paths = [pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])]
@@ -97,6 +104,8 @@ payload = {
     "statusText": sys.argv[12] or None,
     "planText": sys.argv[13] or None,
     "selfE164": sys.argv[14] or None,
+    "verifiedWhatsappToken": sys.argv[15] or None,
+    "verifiedManagerSessionId": sys.argv[16] or None,
 }
 for summary_path in summary_paths:
     summary_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
@@ -123,11 +132,47 @@ if [[ ! -f "$SUMMARY_PATH" ]]; then
 fi
 
 cp "$SUMMARY_PATH" "$SUMMARY_SNAPSHOT_PATH"
+eval "$(verify_live_selftest_summary_snapshot "$SUMMARY_SNAPSHOT_PATH")"
 
 echo "== gateway health =="
 openclaw_ensure_gateway_healthy >/dev/null
 
 SELF_E164="$(openclaw_whatsapp_self_e164)"
+python3 - <<'PY' \
+  "$STATUS_CONTEXT_PATH" \
+  "$SUMMARY_SNAPSHOT_PATH" \
+  "$STATUS_JSON" \
+  "$PLAN_JSON" \
+  "$SELF_E164" \
+  "$VERIFIED_WHATSAPP_TOKEN" \
+  "$VERIFIED_MANAGER_SESSION_ID"
+import json
+import pathlib
+import sys
+
+(
+    context_path,
+    summary_snapshot_path,
+    status_path,
+    plan_path,
+    self_e164,
+    whatsapp_token,
+    manager_session_id,
+) = sys.argv[1:8]
+
+payload = {
+    "kind": "whatsapp-status",
+    "summarySnapshotPath": summary_snapshot_path,
+    "statusPath": status_path,
+    "planPath": plan_path,
+    "selfE164": self_e164,
+    "whatsappToken": whatsapp_token,
+    "managerSessionId": manager_session_id,
+}
+path = pathlib.Path(context_path)
+path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+PY
+verify_whatsapp_run_context_json "$STATUS_CONTEXT_PATH"
 
 echo "== whatsapp human status eval =="
 MAIN_SESSION="$(agent_main_session_jsonl "$WHATSAPP_AGENT_ID")"

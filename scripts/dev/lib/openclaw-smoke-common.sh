@@ -180,6 +180,179 @@ print(value)
 PY
 }
 
+verify_live_selftest_summary_snapshot() {
+  local summary_path="$1"
+  python3 - <<'PY' "$summary_path"
+import json
+import re
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+if not path.is_file():
+    raise SystemExit(f"missing live selftest summary: {path}")
+
+payload = json.loads(path.read_text(encoding="utf-8"))
+errors = []
+
+if payload.get("status") != "passed":
+    errors.append(f"status={payload.get('status')!r}")
+if payload.get("mode") != "live":
+    errors.append(f"mode={payload.get('mode')!r}")
+if payload.get("currentStep") != "done":
+    errors.append(f"currentStep={payload.get('currentStep')!r}")
+
+steps = payload.get("stepsCompleted") or []
+if "whatsapp_reply" not in steps:
+    errors.append("stepsCompleted missing whatsapp_reply")
+
+whatsapp_token = payload.get("whatsappToken") or ""
+if not re.fullmatch(r"WA_SELFTEST_\d+", whatsapp_token):
+    errors.append(f"whatsappToken={whatsapp_token!r}")
+
+manager_session_id = payload.get("managerSessionId") or ""
+if not manager_session_id:
+    errors.append("managerSessionId missing")
+
+artifact_root = payload.get("artifactRoot") or ""
+if not artifact_root or not Path(artifact_root).is_absolute():
+    errors.append(f"artifactRoot={artifact_root!r}")
+
+if errors:
+    raise SystemExit(
+        "invalid live selftest summary snapshot "
+        f"{path}: {', '.join(errors)}"
+    )
+
+print(f'VERIFIED_WHATSAPP_TOKEN={json.dumps(whatsapp_token)}')
+print(f'VERIFIED_MANAGER_SESSION_ID={json.dumps(manager_session_id)}')
+print(f'VERIFIED_SELFTEST_ARTIFACT_ROOT={json.dumps(artifact_root)}')
+PY
+}
+
+verify_whatsapp_run_context_json() {
+  local context_path="$1"
+  python3 - <<'PY' "$context_path"
+import json
+import re
+import sys
+from pathlib import Path
+
+context_path = Path(sys.argv[1])
+if not context_path.is_file():
+    raise SystemExit(f"missing WhatsApp context file: {context_path}")
+
+context = json.loads(context_path.read_text(encoding="utf-8"))
+kind = context.get("kind")
+valid_kinds = {
+    "whatsapp-status",
+    "conversation-turn2",
+    "conversation-turn3",
+    "resume-turn2",
+    "resume-failure-recovery",
+}
+if kind not in valid_kinds:
+    raise SystemExit(f"unsupported WhatsApp context kind {kind!r} in {context_path}")
+
+errors = []
+
+def require_abs_path(key, must_exist=True, allow_parent=False):
+    value = context.get(key)
+    if not value:
+        errors.append(f"{key} missing")
+        return None
+    path = Path(value)
+    if not path.is_absolute():
+        errors.append(f"{key} not absolute: {value!r}")
+        return None
+    if must_exist and not path.exists():
+        errors.append(f"{key} missing on disk: {value!r}")
+    if allow_parent and not path.parent.exists():
+        errors.append(f"{key} parent missing: {str(path.parent)!r}")
+    return path
+
+def require_regex(key, pattern):
+    value = context.get(key) or ""
+    if not re.fullmatch(pattern, value):
+        errors.append(f"{key} invalid: {value!r}")
+    return value
+
+def require_nonempty(key):
+    value = context.get(key)
+    if not isinstance(value, str) or not value.strip():
+        errors.append(f"{key} missing")
+        return ""
+    return value.strip()
+
+session_key = context.get("sessionKey")
+if session_key is not None:
+    require_regex("sessionKey", r"agent:[A-Za-z0-9._-]+:main")
+source_session_key = context.get("sourceSessionKey")
+if source_session_key is not None:
+    require_regex("sourceSessionKey", r"agent:[A-Za-z0-9._-]+:main")
+
+self_e164 = context.get("selfE164")
+if self_e164 is not None:
+    require_regex("selfE164", r"\+[1-9]\d{7,14}")
+
+summary_snapshot_path = require_abs_path("summarySnapshotPath")
+whatsapp_token = require_regex("whatsappToken", r"WA_SELFTEST_\d+")
+manager_session_id = require_nonempty("managerSessionId")
+
+if summary_snapshot_path and summary_snapshot_path.is_file():
+    summary_payload = json.loads(summary_snapshot_path.read_text(encoding="utf-8"))
+    if summary_payload.get("status") != "passed":
+        errors.append(f"summarySnapshotPath status={summary_payload.get('status')!r}")
+    if summary_payload.get("mode") != "live":
+        errors.append(f"summarySnapshotPath mode={summary_payload.get('mode')!r}")
+    if summary_payload.get("whatsappToken") != whatsapp_token:
+        errors.append(
+            "summarySnapshotPath whatsappToken mismatch: "
+            f"{summary_payload.get('whatsappToken')!r} != {whatsapp_token!r}"
+        )
+    if summary_payload.get("managerSessionId") != manager_session_id:
+        errors.append(
+            "summarySnapshotPath managerSessionId mismatch: "
+            f"{summary_payload.get('managerSessionId')!r} != {manager_session_id!r}"
+        )
+
+if kind == "whatsapp-status":
+    require_abs_path("statusPath", must_exist=False, allow_parent=True)
+    require_abs_path("planPath", must_exist=False, allow_parent=True)
+
+if kind == "conversation-turn2":
+    require_regex("marker", r"nebelstern-[a-f0-9]{10}")
+    require_abs_path("turn1Path")
+    require_abs_path("turn1SourcePath")
+
+if kind == "conversation-turn3":
+    require_regex("marker", r"nebelstern-[a-f0-9]{10}")
+    require_abs_path("turn1Path")
+    require_abs_path("turn2Path")
+    require_abs_path("artifactPath", must_exist=False, allow_parent=True)
+    require_nonempty("builderAgentId")
+
+if kind == "resume-turn2":
+    require_regex("marker", r"nebelstern-[a-f0-9]{10}")
+    require_abs_path("turn1Path")
+    require_abs_path("turn1SourcePath")
+
+if kind == "resume-failure-recovery":
+    require_regex("resumeMarker", r"nebelstern-[a-f0-9]{10}")
+    require_regex("sourceTag", r"resume-failure-quelle-[a-f0-9]{8}")
+    require_regex("toolModelPrecheckToken", r"toolmodell-[a-f0-9]{10}")
+    require_abs_path("turn1Path")
+    require_abs_path("artifactPath", must_exist=False, allow_parent=True)
+    require_abs_path("conflictNotePath")
+
+if errors:
+    raise SystemExit(
+        "invalid WhatsApp run context "
+        f"{context_path}: {', '.join(errors)}"
+    )
+PY
+}
+
 agent_json_indicates_missing_tool() {
   local json_path="$1"
   local tool_name="$2"

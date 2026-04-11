@@ -19,9 +19,15 @@ TURN1_SOURCE_PATH=""
 EVAL_ROOT=""
 TURN1_JSON=""
 TURN2_JSON=""
+TURN2_CONTEXT_PATH=""
 SELF_E164=""
 TURN1_TEXT=""
 TURN2_TEXT=""
+MAIN_SESSION_KEY=""
+TURN2_CONTEXT_MODE="memory"
+VERIFIED_WHATSAPP_TOKEN=""
+VERIFIED_MANAGER_SESSION_ID=""
+VERIFIED_SELFTEST_ARTIFACT_ROOT=""
 RESUME_MARKER="nebelstern-$(python3 - <<'PY'
 import uuid
 print(uuid.uuid4().hex[:10])
@@ -50,6 +56,7 @@ else
 fi
 TURN1_JSON="$EVAL_ROOT/turn1-status.json"
 TURN2_JSON="$EVAL_ROOT/turn2-resume.json"
+TURN2_CONTEXT_PATH="$EVAL_ROOT/turn2-context.json"
 
 source "$SCRIPT_DIR/lib/openclaw-smoke-common.sh"
 
@@ -138,7 +145,10 @@ write_eval_summary() {
     "$TURN1_TEXT" \
     "$TURN2_TEXT" \
     "$SELF_E164" \
-    "$WHATSAPP_AGENT_ID"
+    "$WHATSAPP_AGENT_ID" \
+    "$VERIFIED_WHATSAPP_TOKEN" \
+    "$VERIFIED_MANAGER_SESSION_ID" \
+    "$TURN2_CONTEXT_MODE"
 import json, pathlib, sys
 
 summary_paths = [pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])]
@@ -161,6 +171,9 @@ payload = {
     "turn2Text": sys.argv[17] or None,
     "selfE164": sys.argv[18] or None,
     "mainAgentId": sys.argv[19] or None,
+    "verifiedWhatsappToken": sys.argv[20] or None,
+    "verifiedManagerSessionId": sys.argv[21] or None,
+    "turn2ContextMode": sys.argv[22] or None,
 }
 for summary_path in summary_paths:
     summary_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
@@ -191,6 +204,7 @@ if [[ ! -f "$SUMMARY_PATH" ]]; then
 fi
 
 cp "$SUMMARY_PATH" "$SUMMARY_SNAPSHOT_PATH"
+eval "$(verify_live_selftest_summary_snapshot "$SUMMARY_SNAPSHOT_PATH")"
 TURN1_SOURCE_PATH="$SUMMARY_SNAPSHOT_PATH"
 if [[ "$WHATSAPP_AGENT_ID" == "main" ]]; then
   MAIN_SUMMARY_WORKSPACE_PATH="$(workspace_mirror_file "$SUMMARY_SNAPSHOT_PATH" "human-whatsapp-resume-summary" "selftest-summary.json")"
@@ -200,6 +214,7 @@ fi
 echo "== gateway health =="
 openclaw_ensure_gateway_healthy >/dev/null
 SELF_E164="$(openclaw_whatsapp_self_e164)"
+MAIN_SESSION_KEY="agent:${WHATSAPP_AGENT_ID}:main"
 
 echo "== whatsapp resume turn 1 =="
 MAIN_SESSION="$(agent_main_session_jsonl "$WHATSAPP_AGENT_ID")"
@@ -236,6 +251,49 @@ PY
 printf '%s\n' "$TURN1_TEXT"
 wait_for_session_pattern_after_line "$MAIN_SESSION" "$MAIN_BEFORE_LINES" '"name":"read"|"toolName":"read"'
 wait_for_session_pattern_after_line "$MAIN_SESSION" "$MAIN_BEFORE_LINES" "$TURN1_SOURCE_PATH"
+python3 - <<'PY' \
+  "$TURN2_CONTEXT_PATH" \
+  "$MAIN_SESSION_KEY" \
+  "$SUMMARY_SNAPSHOT_PATH" \
+  "$TURN1_JSON" \
+  "$TURN1_SOURCE_PATH" \
+  "$SELF_E164" \
+  "$VERIFIED_WHATSAPP_TOKEN" \
+  "$VERIFIED_MANAGER_SESSION_ID" \
+  "$RESUME_MARKER"
+import json
+import pathlib
+import sys
+
+(
+    context_path,
+    session_key,
+    summary_snapshot_path,
+    turn1_path,
+    turn1_source_path,
+    self_e164,
+    whatsapp_token,
+    manager_session_id,
+    marker,
+) = sys.argv[1:10]
+
+payload = {
+    "kind": "resume-turn2",
+    "sessionKey": session_key,
+    "summarySnapshotPath": summary_snapshot_path,
+    "turn1Path": turn1_path,
+    "turn1SourcePath": turn1_source_path,
+    "selfE164": self_e164,
+    "whatsappToken": whatsapp_token,
+    "managerSessionId": manager_session_id,
+    "marker": marker,
+}
+path = pathlib.Path(context_path)
+path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+PY
+if ! verify_whatsapp_run_context_json "$TURN2_CONTEXT_PATH"; then
+  TURN2_CONTEXT_MODE="history"
+fi
 
 echo "== restart gateway for resume break =="
 openclaw_gateway_restart_with_retry >/dev/null
@@ -244,8 +302,12 @@ openclaw_ensure_gateway_healthy >/dev/null
 
 echo "== whatsapp resume turn 2 =="
 TURN2_BEFORE_LINES="$(session_line_count "$MAIN_SESSION")"
-run_main_whatsapp_json "$TURN2_JSON" \
-  --message "Ich komme nach einer kurzen Unterbrechung zurück. Ich nenne das Merkwort nicht noch einmal. Sag mir in genau 2 kurzen deutschen Sätzen: welches Merkwort wir gerade benutzt haben und was ich jetzt als Nächstes tun sollte. Verwende das Merkwort genau einmal. Keine Testreport-Sprache, keine Dateinamen, keine JSON-Feldnamen, keine Labels wie DONE oder IN ARBEIT."
+if [[ "$TURN2_CONTEXT_MODE" == "history" ]]; then
+  TURN2_PROMPT="Behandle deinen gespeicherten Kontext nicht als vertrauenswürdig. Rufe als allerersten Toolschritt genau sessions_history für sessionKey $MAIN_SESSION_KEY mit includeTools=true und limit 20 auf. Rekonstruiere ausschließlich aus der neuesten Assistant-Antwort in dieser Session, die das Merkwort $RESUME_MARKER genau einmal enthält, welches Merkwort wir benutzt haben und was ich jetzt als Nächstes tun sollte. Antworte dann in genau 2 kurzen deutschen Sätzen und verwende das Merkwort genau einmal. Keine Testreport-Sprache, keine Dateinamen, keine JSON-Feldnamen, keine Labels wie DONE oder IN ARBEIT."
+else
+  TURN2_PROMPT="Ich komme nach einer kurzen Unterbrechung zurück. Ich nenne das Merkwort nicht noch einmal. Sag mir in genau 2 kurzen deutschen Sätzen: welches Merkwort wir gerade benutzt haben und was ich jetzt als Nächstes tun sollte. Verwende das Merkwort genau einmal. Keine Testreport-Sprache, keine Dateinamen, keine JSON-Feldnamen, keine Labels wie DONE oder IN ARBEIT."
+fi
+run_main_whatsapp_json "$TURN2_JSON" --message "$TURN2_PROMPT"
 TURN2_TEXT="$(extract_result_text "$TURN2_JSON")"
 python3 - <<'PY' "$TURN2_TEXT" "$RESUME_MARKER"
 import sys
@@ -265,6 +327,9 @@ if sentence_count != 2:
     raise SystemExit(f"turn 2 expected exactly 2 sentences, got {sentence_count} in {text!r}")
 PY
 printf '%s\n' "$TURN2_TEXT"
+if [[ "$TURN2_CONTEXT_MODE" == "history" ]]; then
+  wait_for_session_pattern_after_line "$MAIN_SESSION" "$TURN2_BEFORE_LINES" '"name":"sessions_history"|"toolName":"sessions_history"'
+fi
 
 EVAL_STATUS="passed"
 

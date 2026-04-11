@@ -25,6 +25,7 @@ TOOL_MODEL_PRECHECK_PATH=""
 TOOL_MODEL_PRECHECK_REL=""
 ARTIFACT_PATH=""
 ARTIFACT_REL=""
+RECOVERY_CONTEXT_PATH=""
 CONFLICT_NOTE_PATH=""
 CONFLICT_NOTE_REL=""
 CONFLICT_NOTE_TEXT=""
@@ -36,6 +37,10 @@ SELF_E164=""
 TURN1_TEXT=""
 TURN2_TEXT=""
 ARTIFACT_TEXT=""
+RECOVERY_CONTEXT_MODE="history_only"
+VERIFIED_WHATSAPP_TOKEN=""
+VERIFIED_MANAGER_SESSION_ID=""
+VERIFIED_SELFTEST_ARTIFACT_ROOT=""
 RESUME_FAILURE_MARKER="nebelstern-$(python3 - <<'PY'
 import uuid
 print(uuid.uuid4().hex[:10])
@@ -90,6 +95,7 @@ TOOL_MODEL_PRECHECK_PATH="$EVAL_ROOT/tool-model-preflight.txt"
 TOOL_MODEL_PRECHECK_REL="${TOOL_MODEL_PRECHECK_PATH#"$REPO_ROOT/"}"
 ARTIFACT_PATH="$EVAL_ROOT/recovery-note.md"
 ARTIFACT_REL="${ARTIFACT_PATH#"$REPO_ROOT/"}"
+RECOVERY_CONTEXT_PATH="$EVAL_ROOT/recovery-context.json"
 CONFLICT_NOTE_PATH="$EVAL_ROOT/conflicting-note.md"
 CONFLICT_NOTE_REL="${CONFLICT_NOTE_PATH#"$REPO_ROOT/"}"
 
@@ -438,7 +444,10 @@ write_eval_summary() {
     "$CONFLICT_TAG" \
     "$SELF_E164" \
     "$SOURCE_AGENT_ID" \
-    "$RECOVERY_AGENT_ID"
+    "$RECOVERY_AGENT_ID" \
+    "$VERIFIED_WHATSAPP_TOKEN" \
+    "$VERIFIED_MANAGER_SESSION_ID" \
+    "$RECOVERY_CONTEXT_MODE"
 import json, pathlib, sys
 
 summary_paths = [pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])]
@@ -480,6 +489,9 @@ payload = {
     "selfE164": sys.argv[36] or None,
     "sourceAgentId": sys.argv[37] or None,
     "recoveryAgentId": sys.argv[38] or None,
+    "verifiedWhatsappToken": sys.argv[39] or None,
+    "verifiedManagerSessionId": sys.argv[40] or None,
+    "recoveryContextMode": sys.argv[41] or None,
 }
 for summary_path in summary_paths:
     summary_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
@@ -537,6 +549,7 @@ if [[ ! -f "$SUMMARY_PATH" ]]; then
 fi
 
 cp "$SUMMARY_PATH" "$SUMMARY_SNAPSHOT_PATH"
+eval "$(verify_live_selftest_summary_snapshot "$SUMMARY_SNAPSHOT_PATH")"
 SOURCE_TURN_PATH="$SUMMARY_SNAPSHOT_PATH"
 if [[ "$SOURCE_AGENT_ID" == "main" ]]; then
   SOURCE_SUMMARY_WORKSPACE_PATH="$(workspace_mirror_file "$SUMMARY_SNAPSHOT_PATH" "human-whatsapp-resume-failure-summary" "selftest-summary.json")"
@@ -641,6 +654,58 @@ if sentence_count not in (2, 3):
 PY
 printf '%s\n' "$TURN1_TEXT"
 wait_for_session_pattern_after_line "$SOURCE_SESSION" "$SOURCE_BEFORE_LINES" "$SOURCE_TAG"
+python3 - <<'PY' \
+  "$RECOVERY_CONTEXT_PATH" \
+  "$SUMMARY_SNAPSHOT_PATH" \
+  "$TURN1_JSON" \
+  "$ARTIFACT_PATH" \
+  "$CONFLICT_NOTE_PATH" \
+  "$SOURCE_SESSION_KEY" \
+  "$SOURCE_TAG" \
+  "$RESUME_FAILURE_MARKER" \
+  "$SELF_E164" \
+  "$VERIFIED_WHATSAPP_TOKEN" \
+  "$VERIFIED_MANAGER_SESSION_ID" \
+  "$TOOL_MODEL_PRECHECK_TOKEN"
+import json
+import pathlib
+import sys
+
+(
+    context_path,
+    summary_snapshot_path,
+    turn1_path,
+    artifact_path,
+    conflict_note_path,
+    source_session_key,
+    source_tag,
+    resume_marker,
+    self_e164,
+    whatsapp_token,
+    manager_session_id,
+    tool_model_precheck_token,
+) = sys.argv[1:13]
+
+payload = {
+    "kind": "resume-failure-recovery",
+    "summarySnapshotPath": summary_snapshot_path,
+    "turn1Path": turn1_path,
+    "artifactPath": artifact_path,
+    "conflictNotePath": conflict_note_path,
+    "sourceSessionKey": source_session_key,
+    "sourceTag": source_tag,
+    "resumeMarker": resume_marker,
+    "selfE164": self_e164,
+    "whatsappToken": whatsapp_token,
+    "managerSessionId": manager_session_id,
+    "toolModelPrecheckToken": tool_model_precheck_token,
+}
+path = pathlib.Path(context_path)
+path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+PY
+if ! verify_whatsapp_run_context_json "$RECOVERY_CONTEXT_PATH"; then
+  RECOVERY_CONTEXT_MODE="history_only_unverified"
+fi
 
 echo "== restart gateway for failure-style break =="
 openclaw_gateway_restart_with_retry >/dev/null
