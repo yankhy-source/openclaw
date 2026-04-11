@@ -167,6 +167,25 @@ write_eval_summary() {
 import json, pathlib, sys
 
 summary_paths = [pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])]
+
+def load_report_fields(prefix, report_path_value):
+    if not report_path_value:
+        return {}
+    report_path = pathlib.Path(report_path_value)
+    if not report_path.is_file():
+        return {}
+    try:
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return {
+        f"{prefix}ExpectedSummary": report.get("expectedSummary"),
+        f"{prefix}ActualSummary": report.get("actualSummary"),
+        f"{prefix}DeviationSummary": report.get("deviationSummary"),
+        f"{prefix}DecisionReason": report.get("decisionReason"),
+        f"{prefix}UserFacingReport": report.get("userFacingReport"),
+    }
+
 payload = {
     "summaryVersion": 1,
     "status": sys.argv[3],
@@ -197,6 +216,7 @@ payload = {
     "turn2ContextReportDecisionSource": sys.argv[28] or None,
     "turn2ContextReportCauseLine": sys.argv[29] or None,
 }
+payload.update(load_report_fields("turn2ContextReport", payload["turn2ContextReportPath"]))
 for summary_path in summary_paths:
     summary_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 PY
@@ -266,7 +286,10 @@ blocked = ["DONE:", "IN ARBEIT:", ".local-agent-last-selftest.json", "failedStep
 found = [item for item in blocked if item.lower() in text.lower()]
 if found:
     raise SystemExit(f"turn 1 contains internal wording {found!r}: {text!r}")
-sentence_count = sum(text.count(mark) for mark in ".!?")
+normalized = text
+for abbreviation in ("inkl.", "bzw.", "z.B.", "u.a.", "ca."):
+    normalized = normalized.replace(abbreviation, abbreviation.replace(".", ""))
+sentence_count = sum(normalized.count(mark) for mark in ".!?")
 if sentence_count != 3:
     raise SystemExit(f"turn 1 expected exactly 3 sentences, got {sentence_count} in {text!r}")
 PY
@@ -351,7 +374,10 @@ blocked = ["DONE:", "IN ARBEIT:", ".local-agent-last-selftest.json", "failedStep
 found = [item for item in blocked if item.lower() in text.lower()]
 if found:
     raise SystemExit(f"turn 2 contains internal wording {found!r}: {text!r}")
-sentence_count = sum(text.count(mark) for mark in ".!?")
+normalized = text
+for abbreviation in ("inkl.", "bzw.", "z.B.", "u.a.", "ca."):
+    normalized = normalized.replace(abbreviation, abbreviation.replace(".", ""))
+sentence_count = sum(normalized.count(mark) for mark in ".!?")
 if sentence_count != 2:
     raise SystemExit(f"turn 2 expected exactly 2 sentences, got {sentence_count} in {text!r}")
 PY

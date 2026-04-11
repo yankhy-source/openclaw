@@ -103,6 +103,25 @@ write_eval_summary() {
 import json, pathlib, sys
 
 summary_paths = [pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])]
+
+def load_report_fields(prefix, report_path_value):
+    if not report_path_value:
+        return {}
+    report_path = pathlib.Path(report_path_value)
+    if not report_path.is_file():
+        return {}
+    try:
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return {
+        f"{prefix}ExpectedSummary": report.get("expectedSummary"),
+        f"{prefix}ActualSummary": report.get("actualSummary"),
+        f"{prefix}DeviationSummary": report.get("deviationSummary"),
+        f"{prefix}DecisionReason": report.get("decisionReason"),
+        f"{prefix}UserFacingReport": report.get("userFacingReport"),
+    }
+
 payload = {
     "summaryVersion": 1,
     "status": sys.argv[3],
@@ -126,6 +145,7 @@ payload = {
     "statusContextReportDecisionSource": sys.argv[21] or None,
     "statusContextReportCauseLine": sys.argv[22] or None,
 }
+payload.update(load_report_fields("statusContextReport", payload["statusContextReportPath"]))
 for summary_path in summary_paths:
     summary_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 PY

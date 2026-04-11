@@ -461,6 +461,31 @@ else:
     deviation_summary = "keine"
     decision_source = success_source
 
+if not errors:
+    if decision_source == "validated_context":
+        decision_reason = "Ich nutze validated_context, weil alle relevanten Konsistenzpruefungen mit dem verifizierten Snapshot uebereinstimmen."
+    elif decision_source == "validated_recovery_context":
+        decision_reason = "Ich nutze validated_recovery_context, weil der Recovery-Kontext mit dem verifizierten Snapshot uebereinstimmt."
+    elif decision_source == "validated_snapshot":
+        decision_reason = "Ich nutze validated_snapshot, weil der kopierte Live-Snapshot ohne Abweichung zum aktuellen Lauf passt."
+    else:
+        decision_reason = f"Ich nutze {decision_source}, weil der verifizierte Kontext ohne Abweichung zum aktuellen Lauf passt."
+    user_facing_report = ""
+else:
+    if decision_source == "sessions_history":
+        decision_reason = "Ich nutze sessions_history, weil der verifizierte Snapshot abweicht und die Sitzungshistorie den letzten belastbaren Stand liefert."
+    elif decision_source == "abort_run":
+        decision_reason = "Ich breche den Lauf ab, weil der verifizierte Snapshot abweicht und kein sicherer Rueckfallpfad freigegeben ist."
+    else:
+        decision_reason = f"Ich nutze {decision_source}, weil der verifizierte Snapshot abweicht und dieser Pfad als sicherer Rueckfall freigegeben ist."
+    user_facing_report = (
+        "Kontext-Report: "
+        f"erwartet={expected_summary}; "
+        f"tatsaechlich={actual_summary}; "
+        f"abweichung={deviation_summary}; "
+        f"entscheidung={decision_reason}"
+    )
+
 cause_line = (
     f"erwartet={expected_summary} | "
     f"tatsaechlich={actual_summary} | "
@@ -479,10 +504,12 @@ report = {
     "reasonCodes": reason_codes,
     "reasonSummary": "all consistency checks passed" if not errors else "; ".join(errors),
     "decisionSource": decision_source,
+    "decisionReason": decision_reason,
     "expectedSummary": expected_summary,
     "actualSummary": actual_summary,
     "deviationSummary": deviation_summary,
     "causeLine": cause_line,
+    "userFacingReport": user_facing_report,
     "primaryCheck": primary_check,
     "checks": checks,
     "summarySnapshot": {
@@ -501,7 +528,12 @@ print(f'WHATSAPP_CONTEXT_KIND={json.dumps(kind or "")}')
 print(f'WHATSAPP_CONTEXT_REASON_CODES={json.dumps(",".join(reason_codes))}')
 print(f'WHATSAPP_CONTEXT_REASON_SUMMARY={json.dumps(report["reasonSummary"])}')
 print(f'WHATSAPP_CONTEXT_DECISION_SOURCE={json.dumps(report["decisionSource"])}')
+print(f'WHATSAPP_CONTEXT_DECISION_REASON={json.dumps(report["decisionReason"])}')
+print(f'WHATSAPP_CONTEXT_EXPECTED_SUMMARY={json.dumps(report["expectedSummary"])}')
+print(f'WHATSAPP_CONTEXT_ACTUAL_SUMMARY={json.dumps(report["actualSummary"])}')
+print(f'WHATSAPP_CONTEXT_DEVIATION_SUMMARY={json.dumps(report["deviationSummary"])}')
 print(f'WHATSAPP_CONTEXT_CAUSE_LINE={json.dumps(report["causeLine"])}')
+print(f'WHATSAPP_CONTEXT_USER_FACING_REPORT={json.dumps(report["userFacingReport"])}')
 print(f'WHATSAPP_CONTEXT_REPORT_PATH={json.dumps(str(report_path))}')
 PY
 }

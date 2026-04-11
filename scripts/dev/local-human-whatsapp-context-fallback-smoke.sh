@@ -26,6 +26,10 @@ CONVERSATION_TURN2_REPORT_DECISION_SOURCE=""
 CONVERSATION_TURN3_REPORT_DECISION_SOURCE=""
 CONVERSATION_TURN2_REPORT_CAUSE_LINE=""
 CONVERSATION_TURN3_REPORT_CAUSE_LINE=""
+CONVERSATION_TURN2_REPORT_DECISION_REASON=""
+CONVERSATION_TURN3_REPORT_DECISION_REASON=""
+CONVERSATION_TURN2_REPORT_USER_FACING_REPORT=""
+CONVERSATION_TURN3_REPORT_USER_FACING_REPORT=""
 CONVERSATION_VERIFIED_TOKEN=""
 CONVERSATION_VERIFIED_MANAGER=""
 RESUME_STATUS=""
@@ -34,6 +38,8 @@ RESUME_TURN2_REPORT_STATUS=""
 RESUME_TURN2_REPORT_REASON_SUMMARY=""
 RESUME_TURN2_REPORT_DECISION_SOURCE=""
 RESUME_TURN2_REPORT_CAUSE_LINE=""
+RESUME_TURN2_REPORT_DECISION_REASON=""
+RESUME_TURN2_REPORT_USER_FACING_REPORT=""
 RESUME_VERIFIED_TOKEN=""
 RESUME_VERIFIED_MANAGER=""
 CONVERSATION_TURN2_FAULT="${OPENCLAW_CONTEXT_FALLBACK_CONVERSATION_TURN2_FAULT:-whatsapp_token_mismatch}"
@@ -85,6 +91,10 @@ write_context_fallback_summary() {
     "$CONVERSATION_TURN3_REPORT_DECISION_SOURCE" \
     "$CONVERSATION_TURN2_REPORT_CAUSE_LINE" \
     "$CONVERSATION_TURN3_REPORT_CAUSE_LINE" \
+    "$CONVERSATION_TURN2_REPORT_DECISION_REASON" \
+    "$CONVERSATION_TURN3_REPORT_DECISION_REASON" \
+    "$CONVERSATION_TURN2_REPORT_USER_FACING_REPORT" \
+    "$CONVERSATION_TURN3_REPORT_USER_FACING_REPORT" \
     "$CONVERSATION_VERIFIED_TOKEN" \
     "$CONVERSATION_VERIFIED_MANAGER" \
     "$RESUME_STATUS" \
@@ -94,6 +104,8 @@ write_context_fallback_summary() {
     "$RESUME_TURN2_REPORT_REASON_SUMMARY" \
     "$RESUME_TURN2_REPORT_DECISION_SOURCE" \
     "$RESUME_TURN2_REPORT_CAUSE_LINE" \
+    "$RESUME_TURN2_REPORT_DECISION_REASON" \
+    "$RESUME_TURN2_REPORT_USER_FACING_REPORT" \
     "$RESUME_VERIFIED_TOKEN" \
     "$RESUME_VERIFIED_MANAGER" \
     "$CONTEXT_FALLBACK_FAILED_COMMAND"
@@ -122,18 +134,24 @@ payload = {
     "conversationTurn3ContextReportDecisionSource": sys.argv[20] or None,
     "conversationTurn2ContextReportCauseLine": sys.argv[21] or None,
     "conversationTurn3ContextReportCauseLine": sys.argv[22] or None,
-    "conversationVerifiedWhatsappToken": sys.argv[23] or None,
-    "conversationVerifiedManagerSessionId": sys.argv[24] or None,
-    "resumeStatus": sys.argv[25] or None,
-    "resumeTurn2ContextMode": sys.argv[26] or None,
-    "resumeTurn2ContextFault": sys.argv[27] or None,
-    "resumeTurn2ContextReportStatus": sys.argv[28] or None,
-    "resumeTurn2ContextReportReasonSummary": sys.argv[29] or None,
-    "resumeTurn2ContextReportDecisionSource": sys.argv[30] or None,
-    "resumeTurn2ContextReportCauseLine": sys.argv[31] or None,
-    "resumeVerifiedWhatsappToken": sys.argv[32] or None,
-    "resumeVerifiedManagerSessionId": sys.argv[33] or None,
-    "failedCommand": sys.argv[34] or None,
+    "conversationTurn2ContextReportDecisionReason": sys.argv[23] or None,
+    "conversationTurn3ContextReportDecisionReason": sys.argv[24] or None,
+    "conversationTurn2ContextReportUserFacingReport": sys.argv[25] or None,
+    "conversationTurn3ContextReportUserFacingReport": sys.argv[26] or None,
+    "conversationVerifiedWhatsappToken": sys.argv[27] or None,
+    "conversationVerifiedManagerSessionId": sys.argv[28] or None,
+    "resumeStatus": sys.argv[29] or None,
+    "resumeTurn2ContextMode": sys.argv[30] or None,
+    "resumeTurn2ContextFault": sys.argv[31] or None,
+    "resumeTurn2ContextReportStatus": sys.argv[32] or None,
+    "resumeTurn2ContextReportReasonSummary": sys.argv[33] or None,
+    "resumeTurn2ContextReportDecisionSource": sys.argv[34] or None,
+    "resumeTurn2ContextReportCauseLine": sys.argv[35] or None,
+    "resumeTurn2ContextReportDecisionReason": sys.argv[36] or None,
+    "resumeTurn2ContextReportUserFacingReport": sys.argv[37] or None,
+    "resumeVerifiedWhatsappToken": sys.argv[38] or None,
+    "resumeVerifiedManagerSessionId": sys.argv[39] or None,
+    "failedCommand": sys.argv[40] or None,
 }
 for summary_path in summary_paths:
     summary_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
@@ -197,6 +215,10 @@ values = {
     "CONVERSATION_TURN3_REPORT_DECISION_SOURCE": conversation.get("turn3ContextReportDecisionSource", ""),
     "CONVERSATION_TURN2_REPORT_CAUSE_LINE": conversation.get("turn2ContextReportCauseLine", ""),
     "CONVERSATION_TURN3_REPORT_CAUSE_LINE": conversation.get("turn3ContextReportCauseLine", ""),
+    "CONVERSATION_TURN2_REPORT_DECISION_REASON": conversation.get("turn2ContextReportDecisionReason", ""),
+    "CONVERSATION_TURN3_REPORT_DECISION_REASON": conversation.get("turn3ContextReportDecisionReason", ""),
+    "CONVERSATION_TURN2_REPORT_USER_FACING_REPORT": conversation.get("turn2ContextReportUserFacingReport", ""),
+    "CONVERSATION_TURN3_REPORT_USER_FACING_REPORT": conversation.get("turn3ContextReportUserFacingReport", ""),
     "CONVERSATION_VERIFIED_TOKEN": conversation.get("verifiedWhatsappToken", ""),
     "CONVERSATION_VERIFIED_MANAGER": conversation.get("verifiedManagerSessionId", ""),
     "RESUME_STATUS": resume.get("status", ""),
@@ -205,6 +227,8 @@ values = {
     "RESUME_TURN2_REPORT_REASON_SUMMARY": resume.get("turn2ContextReportReasonSummary", ""),
     "RESUME_TURN2_REPORT_DECISION_SOURCE": resume.get("turn2ContextReportDecisionSource", ""),
     "RESUME_TURN2_REPORT_CAUSE_LINE": resume.get("turn2ContextReportCauseLine", ""),
+    "RESUME_TURN2_REPORT_DECISION_REASON": resume.get("turn2ContextReportDecisionReason", ""),
+    "RESUME_TURN2_REPORT_USER_FACING_REPORT": resume.get("turn2ContextReportUserFacingReport", ""),
     "RESUME_VERIFIED_TOKEN": resume.get("verifiedWhatsappToken", ""),
     "RESUME_VERIFIED_MANAGER": resume.get("verifiedManagerSessionId", ""),
 }
@@ -257,6 +281,22 @@ if [[ "$CONVERSATION_TURN3_REPORT_CAUSE_LINE" != *"erwartet="* || "$CONVERSATION
   echo "conversation turn 3 consistency cause line is incomplete" >&2
   exit 1
 fi
+if [[ "$CONVERSATION_TURN2_REPORT_DECISION_REASON" != *"Ich nutze sessions_history, weil"* ]]; then
+  echo "conversation turn 2 decision reason did not explain sessions_history fallback" >&2
+  exit 1
+fi
+if [[ "$CONVERSATION_TURN3_REPORT_DECISION_REASON" != *"Ich nutze sessions_history, weil"* ]]; then
+  echo "conversation turn 3 decision reason did not explain sessions_history fallback" >&2
+  exit 1
+fi
+if [[ "$CONVERSATION_TURN2_REPORT_USER_FACING_REPORT" != *"erwartet="* || "$CONVERSATION_TURN2_REPORT_USER_FACING_REPORT" != *"tatsaechlich="* || "$CONVERSATION_TURN2_REPORT_USER_FACING_REPORT" != *"abweichung="* || "$CONVERSATION_TURN2_REPORT_USER_FACING_REPORT" != *"Ich nutze sessions_history, weil"* ]]; then
+  echo "conversation turn 2 user-facing mismatch report is incomplete" >&2
+  exit 1
+fi
+if [[ "$CONVERSATION_TURN3_REPORT_USER_FACING_REPORT" != *"erwartet="* || "$CONVERSATION_TURN3_REPORT_USER_FACING_REPORT" != *"tatsaechlich="* || "$CONVERSATION_TURN3_REPORT_USER_FACING_REPORT" != *"abweichung="* || "$CONVERSATION_TURN3_REPORT_USER_FACING_REPORT" != *"Ich nutze sessions_history, weil"* ]]; then
+  echo "conversation turn 3 user-facing mismatch report is incomplete" >&2
+  exit 1
+fi
 if [[ "$RESUME_STATUS" != "passed" ]]; then
   echo "resume fallback path did not pass: $RESUME_STATUS" >&2
   exit 1
@@ -279,6 +319,14 @@ if [[ "$RESUME_TURN2_REPORT_REASON_SUMMARY" != *"whatsappToken mismatch"* ]]; th
 fi
 if [[ "$RESUME_TURN2_REPORT_CAUSE_LINE" != *"erwartet="* || "$RESUME_TURN2_REPORT_CAUSE_LINE" != *"tatsaechlich="* || "$RESUME_TURN2_REPORT_CAUSE_LINE" != *"abweichung="* || "$RESUME_TURN2_REPORT_CAUSE_LINE" != *"quelle=sessions_history"* ]]; then
   echo "resume turn 2 consistency cause line is incomplete" >&2
+  exit 1
+fi
+if [[ "$RESUME_TURN2_REPORT_DECISION_REASON" != *"Ich nutze sessions_history, weil"* ]]; then
+  echo "resume turn 2 decision reason did not explain sessions_history fallback" >&2
+  exit 1
+fi
+if [[ "$RESUME_TURN2_REPORT_USER_FACING_REPORT" != *"erwartet="* || "$RESUME_TURN2_REPORT_USER_FACING_REPORT" != *"tatsaechlich="* || "$RESUME_TURN2_REPORT_USER_FACING_REPORT" != *"abweichung="* || "$RESUME_TURN2_REPORT_USER_FACING_REPORT" != *"Ich nutze sessions_history, weil"* ]]; then
+  echo "resume turn 2 user-facing mismatch report is incomplete" >&2
   exit 1
 fi
 if [[ -z "$CONVERSATION_VERIFIED_TOKEN" || "$CONVERSATION_VERIFIED_TOKEN" != "$RESUME_VERIFIED_TOKEN" ]]; then

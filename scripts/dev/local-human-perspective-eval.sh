@@ -256,8 +256,14 @@ fi
 run_json_assert "$Q3_JSON" "ARTIFACT_DONE" >/dev/null
 wait_for_session_pattern_after_line "$BUILDER_SESSION" "$BUILDER_BEFORE_LINES" '"name":"read"'
 wait_for_session_pattern_after_line "$BUILDER_SESSION" "$BUILDER_BEFORE_LINES" "$EVAL_SUMMARY_SNAPSHOT"
-wait_for_session_pattern_after_line "$BUILDER_SESSION" "$BUILDER_BEFORE_LINES" '"name":"apply_patch"|"name":"edit"|"name":"write"'
-wait_for_session_pattern_after_line "$BUILDER_SESSION" "$BUILDER_BEFORE_LINES" "$ARTIFACT_PATH"
+if session_pattern_line_after_line "$BUILDER_SESSION" "$BUILDER_BEFORE_LINES" '"name":"sessions_spawn"|"toolName":"sessions_spawn"' >/dev/null; then
+  wait_for_session_pattern_after_line "$BUILDER_SESSION" "$BUILDER_BEFORE_LINES" '"name":"sessions_spawn"|"toolName":"sessions_spawn"'
+  wait_for_session_pattern_after_line "$BUILDER_SESSION" "$BUILDER_BEFORE_LINES" "agent:${BUILDER_AGENT_ID}:subagent:"
+  wait_for_session_pattern_after_line "$BUILDER_SESSION" "$BUILDER_BEFORE_LINES" "$ARTIFACT_PATH"
+else
+  wait_for_session_pattern_after_line "$BUILDER_SESSION" "$BUILDER_BEFORE_LINES" '"name":"apply_patch"|"name":"edit"|"name":"write"'
+  wait_for_session_pattern_after_line "$BUILDER_SESSION" "$BUILDER_BEFORE_LINES" "$ARTIFACT_PATH"
+fi
 
 python3 - <<'PY' "$ARTIFACT_PATH" "$EVAL_SUMMARY_SNAPSHOT"
 import json, sys
