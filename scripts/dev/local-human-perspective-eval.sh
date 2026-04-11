@@ -10,6 +10,7 @@ HUMAN_EVAL_BASE="${OPENCLAW_HUMAN_EVAL_BASE:-$REPO_ROOT/.local-human-eval}"
 HUMAN_EVAL_SUMMARY_PATH="${OPENCLAW_HUMAN_EVAL_SUMMARY_PATH:-$REPO_ROOT/.local-agent-last-human-eval.json}"
 MAIN_AGENT_ID="${OPENCLAW_HUMAN_MAIN_AGENT_ID:-oc-human-main}"
 BUILDER_AGENT_ID="${OPENCLAW_HUMAN_BUILDER_AGENT_ID:-oc-human-builder}"
+MAX_AGE_SECONDS="${OPENCLAW_SELFTEST_MAX_AGE_SECONDS:-21600}"
 EVAL_ROOT=""
 EVAL_SUMMARY_SNAPSHOT=""
 Q1_JSON="$EVAL_ROOT/human-status.json"
@@ -128,7 +129,7 @@ echo "== bootstrap local coding agents =="
 node "$BOOTSTRAP_SCRIPT" >/dev/null
 
 echo "== ensure fresh live selftest =="
-bash "$ENSURE_SCRIPT" --live >/dev/null
+bash "$ENSURE_SCRIPT" --live --max-age-seconds "$MAX_AGE_SECONDS" >/dev/null
 
 if [[ ! -f "$SUMMARY_PATH" ]]; then
   echo "missing selftest summary at $SUMMARY_PATH" >&2

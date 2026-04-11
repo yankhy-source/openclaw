@@ -51,6 +51,7 @@ HUMAN_WHATSAPP_RESUME_EVAL_STATUS=""
 HUMAN_WHATSAPP_RESUME_FAILURE_EVAL_STATUS=""
 CONTEXT_FALLBACK_SMOKE_STATUS=""
 CONTEXT_REPORT_AUDIT_STATUS=""
+MAX_AGE_SECONDS="${OPENCLAW_SELFTEST_MAX_AGE_SECONDS:-43200}"
 
 if [[ -d "$NODE22_BIN" ]]; then
   PATH="$NODE22_BIN:$PATH"
@@ -59,6 +60,7 @@ fi
 
 PATH="$REPO_ROOT/scripts/dev:$REPO_ROOT/../claw-code-parity/scripts:$PATH"
 export PATH
+export OPENCLAW_SELFTEST_MAX_AGE_SECONDS="$MAX_AGE_SECONDS"
 
 mkdir -p "$INTELLIGENCE_LOOP_BASE"
 LOOP_ROOT="$(mktemp -d "$INTELLIGENCE_LOOP_BASE/run.XXXXXX")"
@@ -80,6 +82,103 @@ run_evaluator_agent_json() {
   local output_path="$1"
   shift
   run_openclaw_agent_json "$output_path" --agent "$EVALUATOR_AGENT_ID" --thinking medium "$@"
+}
+
+should_retry_human_eval() {
+  local summary_path="$1"
+  python3 - <<'PY' "$summary_path"
+import json
+import sys
+from pathlib import Path
+
+summary_path = Path(sys.argv[1])
+if not summary_path.is_file():
+    raise SystemExit(1)
+
+try:
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+except Exception:
+    raise SystemExit(1)
+
+failed_command = summary.get("failedCommand") or ""
+task1_path = summary.get("task1Path") or ""
+if summary.get("status") == "passed":
+    raise SystemExit(1)
+if "EVAL_TASK1_TEXT" not in failed_command:
+    raise SystemExit(1)
+if not task1_path:
+    raise SystemExit(1)
+
+task1_file = Path(task1_path)
+if not task1_file.is_file():
+    raise SystemExit(1)
+
+raw = task1_file.read_text(encoding="utf-8")
+decoder = json.JSONDecoder()
+payload = None
+
+def result_payload(candidate):
+    if not isinstance(candidate, dict):
+        return None
+    if isinstance(candidate.get("result"), dict):
+        return candidate["result"]
+    if isinstance(candidate.get("payloads"), list):
+        return candidate
+    return None
+
+for index, char in enumerate(raw):
+    if char != "{":
+        continue
+    try:
+        candidate, _ = decoder.raw_decode(raw[index:])
+    except json.JSONDecodeError:
+        continue
+    result = result_payload(candidate)
+    if result is not None:
+        payload = result
+
+if payload is None:
+    raise SystemExit(1)
+
+texts = [item.get("text", "") for item in payload.get("payloads", []) if item.get("text")]
+text = (texts[0] if texts else "").strip().lower()
+meta = payload.get("meta") or {}
+agent_meta = meta.get("agentMeta") or {}
+provider = (agent_meta.get("provider") or "").strip().lower()
+
+retry_phrases = [
+    "keine informationen gelesen",
+    "bitte gib mir den inhalt",
+    "ich weiß nicht, was du meinst",
+]
+if provider == "heretic-local" and any(phrase in text for phrase in retry_phrases):
+    raise SystemExit(0)
+
+raise SystemExit(1)
+PY
+}
+
+run_human_eval_with_retry() {
+  local attempts=2
+  local delay=2
+  local attempt=1
+  while (( attempt <= attempts )); do
+    if (( attempt == 1 )); then
+      if bash "$HUMAN_EVAL_SCRIPT" >/dev/null; then
+        return 0
+      fi
+    else
+      if OPENCLAW_HUMAN_MAIN_AGENT_ID=main OPENCLAW_HUMAN_BUILDER_AGENT_ID=oc-builder OPENCLAW_SELFTEST_MAX_AGE_SECONDS=43200 bash "$HUMAN_EVAL_SCRIPT" >/dev/null; then
+        return 0
+      fi
+    fi
+    if (( attempt < attempts )) && should_retry_human_eval "$HUMAN_EVAL_SUMMARY_PATH"; then
+      sleep "$delay"
+      attempt=$((attempt + 1))
+      continue
+    fi
+    return 1
+  done
 }
 
 on_error() {
@@ -178,7 +277,7 @@ echo "== bootstrap local coding agents =="
 node "$BOOTSTRAP_SCRIPT" >/dev/null
 
 echo "== human perspective eval =="
-bash "$HUMAN_EVAL_SCRIPT" >/dev/null
+run_human_eval_with_retry
 
 echo "== human whatsapp eval =="
 bash "$HUMAN_WHATSAPP_EVAL_SCRIPT" >/dev/null

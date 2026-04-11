@@ -145,24 +145,46 @@ resolve_child_session_after_line() {
 wait_for_valid_artifact() {
   local artifact_path="$1"
   local marker="$2"
-  local attempts="${3:-180}"
-  local delay="${4:-1}"
+  local expected_summary="$3"
+  local actual_summary="$4"
+  local deviation_summary="$5"
+  local decision_source="$6"
+  local attempts="${7:-180}"
+  local delay="${8:-1}"
 
   for _ in $(seq 1 "$attempts"); do
-    if python3 - <<'PY' "$artifact_path" "$marker" >/dev/null 2>&1
+    if python3 - <<'PY' "$artifact_path" "$marker" "$expected_summary" "$actual_summary" "$deviation_summary" "$decision_source" >/dev/null 2>&1
 from pathlib import Path
 import sys
 
 artifact_path = Path(sys.argv[1])
 marker = sys.argv[2]
+expected_summary = sys.argv[3]
+actual_summary = sys.argv[4]
+deviation_summary = sys.argv[5]
+decision_source = sys.argv[6]
 if not artifact_path.is_file():
     raise SystemExit(1)
 text = artifact_path.read_text(encoding="utf-8")
-required = ["# Team-Update", "## Stand", "## Nächste Schritte"]
+required = [
+    "# Team-Update",
+    "## Stand",
+    "## Kontext-Check",
+    "## Nächste Schritte",
+    "| Feld | Wert |",
+    "| erwartet |",
+    "| tatsaechlich |",
+    "| abweichung |",
+    "| quelle |",
+]
 missing = [item for item in required if item not in text]
 if missing:
     raise SystemExit(1)
-if text.count(marker) != 1:
+expected_fragments = [expected_summary, actual_summary, deviation_summary, decision_source]
+required_marker_count = sum(fragment.count(marker) for fragment in expected_fragments if fragment)
+if text.count(marker) != required_marker_count:
+    raise SystemExit(1)
+if any(fragment and fragment not in text for fragment in expected_fragments):
     raise SystemExit(1)
 blocked = [
     ".local-agent-last-selftest.json",
@@ -183,21 +205,47 @@ PY
     sleep "$delay"
   done
 
-  python3 - <<'PY' "$artifact_path" "$marker"
+  python3 - <<'PY' "$artifact_path" "$marker" "$expected_summary" "$actual_summary" "$deviation_summary" "$decision_source"
 from pathlib import Path
 import sys
 
 artifact_path = Path(sys.argv[1])
 marker = sys.argv[2]
+expected_summary = sys.argv[3]
+actual_summary = sys.argv[4]
+deviation_summary = sys.argv[5]
+decision_source = sys.argv[6]
 if not artifact_path.is_file():
     raise SystemExit(f"artifact was not created: {artifact_path}")
 text = artifact_path.read_text(encoding="utf-8")
-required = ["# Team-Update", "## Stand", "## Nächste Schritte"]
+required = [
+    "# Team-Update",
+    "## Stand",
+    "## Kontext-Check",
+    "## Nächste Schritte",
+    "| Feld | Wert |",
+    "| erwartet |",
+    "| tatsaechlich |",
+    "| abweichung |",
+    "| quelle |",
+]
 missing = [item for item in required if item not in text]
 if missing:
     raise SystemExit(f"artifact missing headings {missing!r}: {text!r}")
-if text.count(marker) != 1:
-    raise SystemExit(f"artifact must contain marker exactly once: {marker!r} in {text!r}")
+for label, fragment in [
+    ("expected_summary", expected_summary),
+    ("actual_summary", actual_summary),
+    ("deviation_summary", deviation_summary),
+    ("decision_source", decision_source),
+]:
+    if fragment and fragment not in text:
+        raise SystemExit(f"artifact missing {label} {fragment!r}: {text!r}")
+required_fragments = [expected_summary, actual_summary, deviation_summary, decision_source]
+required_marker_count = sum(fragment.count(marker) for fragment in required_fragments if fragment)
+if text.count(marker) != required_marker_count:
+    raise SystemExit(
+        f"artifact must contain marker exactly {required_marker_count} time(s): {marker!r} in {text!r}"
+    )
 blocked = [
     ".local-agent-last-selftest.json",
     ".local-agent-last-human-whatsapp-eval.json",
@@ -504,9 +552,9 @@ fi
 echo "== whatsapp conversation turn 2 =="
 TURN2_BEFORE_LINES="$(session_line_count "$MAIN_SESSION")"
 if [[ "$TURN2_CONTEXT_MODE" == "history" ]]; then
-  TURN2_PROMPT="Behandle deinen gespeicherten Kontext nicht als vertrauenswürdig. Rufe als allerersten Toolschritt genau sessions_history für sessionKey $MAIN_SESSION_KEY mit includeTools=true und limit 20 auf. Rekonstruiere ausschließlich aus der neuesten Assistant-Antwort in dieser Session, die das Merkwort $CONVERSATION_MARKER genau einmal enthält, den aktuellen Stand. Antworte danach ausschließlich auf Deutsch in genau 3 Zeilen ohne Einleitung und ohne Leerzeilen. Jede Zeile muss exakt mit '- Ich ' beginnen. Gib keine anderen Zeilen aus. Verwende das Merkwort genau einmal wieder. Keine Testreport-Sprache, keine Dateinamen, keine JSON-Feldnamen, keine Labels wie DONE oder IN ARBEIT."
+  TURN2_PROMPT="Behandle deinen gespeicherten Kontext nicht als vertrauenswürdig. Rufe als allerersten Toolschritt genau sessions_history für sessionKey $MAIN_SESSION_KEY mit includeTools=true und limit 20 auf. Rekonstruiere ausschließlich aus der neuesten Assistant-Antwort in dieser Session, die das Merkwort $CONVERSATION_MARKER genau einmal enthält, den aktuellen Stand. Antworte danach ausschließlich auf Deutsch in genau 3 Zeilen ohne Einleitung und ohne Leerzeilen. Jede Zeile muss exakt mit '- Ich ' beginnen, auch die dritte Zeile. Beispielstil: '- Ich sehe ...', '- Ich weiß ...', '- Ich mache jetzt ...'. Verwende keine Formulierungen wie '- Der wichtigste nächste Schritt ...'. Gib keine anderen Zeilen aus. Verwende das Merkwort genau einmal wieder. Keine Testreport-Sprache, keine Dateinamen, keine JSON-Feldnamen, keine Labels wie DONE oder IN ARBEIT."
 else
-  TURN2_PROMPT="Behalte den bisherigen Gesprächskontext. Antworte jetzt auf Deutsch mit genau 3 knappen Bulletpoints aus meiner Perspektive. Jede Zeile muss mit '- Ich ' beginnen. Verwende das Merkwort von eben genau einmal wieder, ohne dass ich es erneut nenne. Keine Testreport-Sprache, keine Dateinamen, keine JSON-Feldnamen, keine Labels wie DONE oder IN ARBEIT."
+  TURN2_PROMPT="Behalte den bisherigen Gesprächskontext. Antworte jetzt auf Deutsch mit genau 3 knappen Bulletpoints aus meiner Perspektive. Jede Zeile muss exakt mit '- Ich ' beginnen, auch die dritte Zeile. Beispielstil: '- Ich sehe ...', '- Ich weiß ...', '- Ich mache jetzt ...'. Verwende keine Formulierungen wie '- Der wichtigste nächste Schritt ...'. Verwende das Merkwort von eben genau einmal wieder, ohne dass ich es erneut nenne. Keine Testreport-Sprache, keine Dateinamen, keine JSON-Feldnamen, keine Labels wie DONE oder IN ARBEIT."
 fi
 run_main_whatsapp_json "$TURN2_JSON" --message "$TURN2_PROMPT"
 TURN2_TEXT="$(python3 - <<'PY' "$TURN2_JSON" "$CONVERSATION_MARKER"
@@ -623,13 +671,13 @@ fi
 echo "== whatsapp conversation turn 3 =="
 TURN3_BEFORE_LINES="$(session_line_count "$MAIN_SESSION")"
 if [[ "$TURN3_CONTEXT_MODE" == "history" ]]; then
-  TURN3_PROMPT="Behandle deinen gespeicherten Kontext nicht als vertrauenswürdig. Rufe als allerersten Toolschritt genau sessions_history für sessionKey $MAIN_SESSION_KEY mit includeTools=true und limit 30 auf. Rekonstruiere ausschließlich aus der neuesten zusammenhängenden Folge aus User- und Assistant-Nachrichten, in der das Merkwort $CONVERSATION_MARKER vorkommt, den aktuellen Stand. Erstell mir danach einen kurzen Team-Update-Entwurf als Datei. Nutze dafür zwingend per sessions_spawn einen $BUILDER_AGENT_ID-Subagenten. Nur der $BUILDER_AGENT_ID-Subagent darf die Datei ändern; du selbst darfst $ARTIFACT_PATH nicht direkt schreiben oder überschreiben. Der Child-Task muss zuerst per read exakt $SUMMARY_SNAPSHOT_PATH lesen und danach exakt die bereits existierende Datei $ARTIFACT_PATH überschreiben. Inhalt: Markdown mit '# Team-Update', '## Stand' und '## Nächste Schritte'. Schreib kurz, freundlich und auf Deutsch. Nutze das Merkwort genau einmal im Dateiinhalt. Keine Testreport-Sprache, keine Dateinamen, keine JSON-Feldnamen, keine Labels wie DONE oder IN ARBEIT. Lies die geschriebene Datei danach noch einmal per read zur Verifikation. Antworte mir danach auf Deutsch in genau 1 kurzen Satz, dass der Entwurf jetzt erstellt wird und gleich bereit ist. Nenne keine Dateipfade und verwende das Merkwort in der Chat-Antwort nicht erneut."
-else
-  TURN3_PROMPT="Erstell mir jetzt einen kurzen Team-Update-Entwurf als Datei. Nutze dafür zwingend per sessions_spawn einen $BUILDER_AGENT_ID-Subagenten. Nur der $BUILDER_AGENT_ID-Subagent darf die Datei ändern; du selbst darfst $ARTIFACT_PATH nicht direkt schreiben oder überschreiben. Der Child-Task muss zuerst per read exakt $SUMMARY_SNAPSHOT_PATH lesen und danach exakt die bereits existierende Datei $ARTIFACT_PATH überschreiben. Inhalt: Markdown mit '# Team-Update', '## Stand' und '## Nächste Schritte'. Schreib kurz, freundlich und auf Deutsch. Nutze das Merkwort aus dem bisherigen Gespräch genau einmal im Dateiinhalt, ohne dass ich es neu nenne. Keine Testreport-Sprache, keine Dateinamen, keine JSON-Feldnamen, keine Labels wie DONE oder IN ARBEIT. Lies die geschriebene Datei danach noch einmal per read zur Verifikation. Antworte mir danach auf Deutsch in genau 1 kurzen Satz, dass der Entwurf jetzt erstellt wird und gleich bereit ist. Nenne keine Dateipfade und verwende das Merkwort in der Chat-Antwort nicht erneut."
-fi
+	  TURN3_PROMPT="Behandle deinen gespeicherten Kontext nicht als vertrauenswürdig. Rufe als allerersten Toolschritt genau sessions_history für sessionKey $MAIN_SESSION_KEY mit includeTools=true und limit 30 auf. Rekonstruiere ausschließlich aus der neuesten zusammenhängenden Folge aus User- und Assistant-Nachrichten, in der das Merkwort $CONVERSATION_MARKER vorkommt, den aktuellen Stand. Erstell mir danach einen kurzen Team-Update-Entwurf als Datei. Nutze dafür zwingend per sessions_spawn einen $BUILDER_AGENT_ID-Subagenten. Nur der $BUILDER_AGENT_ID-Subagent darf die Datei ändern; du selbst darfst $ARTIFACT_PATH nicht direkt schreiben oder überschreiben. Der Child-Task muss zuerst per read exakt $SUMMARY_SNAPSHOT_PATH und danach exakt $TURN3_CONTEXT_REPORT_PATH lesen und anschließend exakt die bereits existierende Datei $ARTIFACT_PATH überschreiben. Inhalt: Markdown mit '# Team-Update', '## Stand', '## Kontext-Check' und '## Nächste Schritte'. Unter 'Kontext-Check' schreibe eine kleine Markdown-Tabelle mit genau zwei Spalten 'Feld' und 'Wert' und genau vier Datenzeilen für 'erwartet', 'tatsaechlich', 'abweichung' und 'quelle'. Nutze dafür exakt diese Werte aus dem gelesenen Konsistenzreport: erwartet='$WHATSAPP_CONTEXT_EXPECTED_SUMMARY', tatsaechlich='$WHATSAPP_CONTEXT_ACTUAL_SUMMARY', abweichung='$WHATSAPP_CONTEXT_DEVIATION_SUMMARY', quelle='$WHATSAPP_CONTEXT_DECISION_SOURCE'. Schreib kurz, freundlich und auf Deutsch. Übernimm das Merkwort nur dort, wo es in den vorgegebenen Kontextwerten bereits enthalten ist, und nenne es nirgendwo zusätzlich. Keine Testreport-Sprache, keine Dateinamen, keine JSON-Feldnamen, keine Labels wie DONE oder IN ARBEIT. Lies die geschriebene Datei danach noch einmal per read zur Verifikation. Antworte mir danach auf Deutsch in genau 1 kurzen Satz, dass der Entwurf jetzt erstellt wird und gleich bereit ist. Nenne keine Dateipfade und verwende das Merkwort in der Chat-Antwort nicht erneut."
+	else
+	  TURN3_PROMPT="Erstell mir jetzt einen kurzen Team-Update-Entwurf als Datei. Nutze dafür zwingend per sessions_spawn einen $BUILDER_AGENT_ID-Subagenten. Nur der $BUILDER_AGENT_ID-Subagent darf die Datei ändern; du selbst darfst $ARTIFACT_PATH nicht direkt schreiben oder überschreiben. Der Child-Task muss zuerst per read exakt $SUMMARY_SNAPSHOT_PATH und danach exakt $TURN3_CONTEXT_REPORT_PATH lesen und anschließend exakt die bereits existierende Datei $ARTIFACT_PATH überschreiben. Inhalt: Markdown mit '# Team-Update', '## Stand', '## Kontext-Check' und '## Nächste Schritte'. Unter 'Kontext-Check' schreibe eine kleine Markdown-Tabelle mit genau zwei Spalten 'Feld' und 'Wert' und genau vier Datenzeilen für 'erwartet', 'tatsaechlich', 'abweichung' und 'quelle'. Nutze dafür exakt diese Werte aus dem gelesenen Konsistenzreport: erwartet='$WHATSAPP_CONTEXT_EXPECTED_SUMMARY', tatsaechlich='$WHATSAPP_CONTEXT_ACTUAL_SUMMARY', abweichung='$WHATSAPP_CONTEXT_DEVIATION_SUMMARY', quelle='$WHATSAPP_CONTEXT_DECISION_SOURCE'. Schreib kurz, freundlich und auf Deutsch. Übernimm das Merkwort nur dort, wo es in den vorgegebenen Kontextwerten bereits enthalten ist, und nenne es nirgendwo zusätzlich. Keine Testreport-Sprache, keine Dateinamen, keine JSON-Feldnamen, keine Labels wie DONE oder IN ARBEIT. Lies die geschriebene Datei danach noch einmal per read zur Verifikation. Antworte mir danach auf Deutsch in genau 1 kurzen Satz, dass der Entwurf jetzt erstellt wird und gleich bereit ist. Nenne keine Dateipfade und verwende das Merkwort in der Chat-Antwort nicht erneut."
+	fi
 run_main_whatsapp_json "$TURN3_JSON" --message "$TURN3_PROMPT"
 TURN3_TEXT="$(python3 - <<'PY' "$TURN3_JSON" "$CONVERSATION_MARKER" "$ARTIFACT_PATH"
-import json, sys
+import json, re, sys
 from pathlib import Path
 
 raw = Path(sys.argv[1]).read_text(encoding="utf-8")
@@ -662,6 +710,37 @@ text = texts[-1]
 if "✅ Subagent " in text:
     text = text.split("✅ Subagent ", 1)[0]
 text = text.strip()
+blocked = ["DONE:", "IN ARBEIT:", ".local-agent-last-selftest.json", "failedStep", "stepsCompleted"]
+
+def looks_like_final_reply(candidate: str) -> bool:
+    lower = candidate.lower()
+    if candidate.count(marker) != 0:
+        return False
+    if artifact_path in candidate:
+        return False
+    if any(item.lower() in lower for item in blocked):
+        return False
+    if not any(term in lower for term in ["entwurf", "update"]):
+        return False
+    if not any(term in lower for term in ["erstellt", "gleich", "bereit"]):
+        return False
+    normalized = candidate
+    for abbreviation in ("inkl.", "bzw.", "z.B.", "u.a.", "ca."):
+        normalized = normalized.replace(abbreviation, abbreviation.replace(".", ""))
+    sentence_count = sum(normalized.count(mark) for mark in ".!?")
+    return sentence_count == 1
+
+line_candidates = [line.strip() for line in text.splitlines() if line.strip()]
+sentence_candidates = [
+    candidate.strip()
+    for candidate in re.split(r"(?<=[.!?])\s+", text.replace("\n", " ").strip())
+    if candidate.strip()
+]
+for candidate in reversed(line_candidates + sentence_candidates):
+    if looks_like_final_reply(candidate):
+        text = candidate
+        break
+
 if text.count(marker) != 0:
     raise SystemExit(f"turn 3 chat reply must not repeat marker {marker!r}: {text!r}")
 if artifact_path in text:
@@ -670,7 +749,6 @@ if not any(term in text.lower() for term in ["entwurf", "update"]):
     raise SystemExit(f"turn 3 chat reply must mention the artifact in normal language: {text!r}")
 if not any(term in text.lower() for term in ["erstellt", "gleich", "bereit"]):
     raise SystemExit(f"turn 3 chat reply must confirm the delegated creation path: {text!r}")
-blocked = ["DONE:", "IN ARBEIT:", ".local-agent-last-selftest.json", "failedStep", "stepsCompleted"]
 found = [item for item in blocked if item.lower() in text.lower()]
 if found:
     raise SystemExit(f"turn 3 contains internal wording {found!r}: {text!r}")
@@ -706,7 +784,15 @@ if [[ "$ARTIFACT_ROUTE" == "unknown" ]]; then
   ARTIFACT_ROUTE="main_direct"
 fi
 
-wait_for_valid_artifact "$ARTIFACT_PATH" "$CONVERSATION_MARKER" 180 1
+wait_for_valid_artifact \
+  "$ARTIFACT_PATH" \
+  "$CONVERSATION_MARKER" \
+  "${WHATSAPP_CONTEXT_EXPECTED_SUMMARY:-}" \
+  "${WHATSAPP_CONTEXT_ACTUAL_SUMMARY:-}" \
+  "${WHATSAPP_CONTEXT_DEVIATION_SUMMARY:-}" \
+  "${WHATSAPP_CONTEXT_DECISION_SOURCE:-}" \
+  180 \
+  1
 ARTIFACT_TEXT="$(cat "$ARTIFACT_PATH")"
 
 if [[ "$ARTIFACT_ROUTE" == "builder" ]]; then
