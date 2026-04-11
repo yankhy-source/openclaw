@@ -137,7 +137,7 @@ if [[ -z "$MAIN_SESSION" || ! -f "$MAIN_SESSION" ]]; then
 fi
 MAIN_BEFORE_LINES="$(session_line_count "$MAIN_SESSION")"
 run_main_whatsapp_json "$STATUS_JSON" \
-  --message "Ich bin der Nutzer. Lies zuerst per read exakt $SUMMARY_SNAPSHOT_PATH. Antworte danach auf Deutsch in genau 3 kurzen Sätzen: Läuft mein lokaler Agent stabil, ist WhatsApp verbunden, und was ist der wichtigste nächste Schritt? Wenn der letzte Test fehlgeschlagen ist oder WhatsApp nicht belegt ist, sag das klar, aber normal. Keine Testreport-Sprache, keine Dateinamen, keine JSON-Feldnamen, keine Labels wie DONE oder IN ARBEIT. Ohne echten read-Toolcall darfst du den Auftrag nicht abschließen."
+  --message "Ich bin der Nutzer. Lies zuerst per read exakt $SUMMARY_SNAPSHOT_PATH. Antworte danach auf Deutsch in genau 3 kurzen Zeilen mit genau 1 Satz pro Zeile. Zeile 1 beantwortet, ob mein lokaler Agent stabil läuft. Zeile 2 beantwortet, ob WhatsApp verbunden ist. Zeile 3 nennt den wichtigsten nächsten Schritt. Wenn der letzte Test fehlgeschlagen ist oder WhatsApp nicht belegt ist, sag das klar, aber normal. Keine Testreport-Sprache, keine Dateinamen, keine JSON-Feldnamen, keine Labels wie DONE oder IN ARBEIT, keine Bulletpoints, keine zusätzliche vierte Zeile. Ohne echten read-Toolcall darfst du den Auftrag nicht abschließen."
 
 STATUS_TEXT="$(python3 - <<'PY' "$STATUS_JSON"
 import json, sys
@@ -145,6 +145,14 @@ from pathlib import Path
 raw = Path(sys.argv[1]).read_text(encoding="utf-8")
 decoder = json.JSONDecoder()
 payload = None
+def result_payload(candidate):
+    if not isinstance(candidate, dict):
+        return None
+    if isinstance(candidate.get("result"), dict):
+        return candidate["result"]
+    if isinstance(candidate.get("payloads"), list):
+        return candidate
+    return None
 for index, char in enumerate(raw):
     if char != "{":
         continue
@@ -152,11 +160,17 @@ for index, char in enumerate(raw):
         candidate, _ = decoder.raw_decode(raw[index:])
     except json.JSONDecodeError:
         continue
-    if isinstance(candidate, dict) and "result" in candidate:
-        payload = candidate
+    result = result_payload(candidate)
+    if result is not None:
+        payload = result
 if payload is None:
     raise SystemExit(f"status task missing JSON result payload in {sys.argv[1]}")
-text = payload["result"]["payloads"][0]["text"].strip()
+text = payload["payloads"][0]["text"].strip()
+lines = [line.strip() for line in text.splitlines() if line.strip()]
+if len(lines) != 3:
+    raise SystemExit(f"status task expected exactly 3 lines, got {len(lines)} in {text!r}")
+if any(line.startswith("- ") for line in lines):
+    raise SystemExit(f"status task must not use bullets in {text!r}")
 core_terms = [item for item in ["WhatsApp"] if item.lower() not in text.lower()]
 if core_terms:
     raise SystemExit(f"status task missing expected concepts in {text!r}")
@@ -168,9 +182,9 @@ blocked = ["DONE:", "IN ARBEIT:", ".local-agent-last-selftest.json", "failedStep
 found = [item for item in blocked if item.lower() in text.lower()]
 if found:
     raise SystemExit(f"status task contains internal wording: {found} in {text!r}")
-sentence_count = sum(text.count(mark) for mark in ".!?")
-if sentence_count != 3:
-    raise SystemExit(f"status task expected exactly 3 sentences, got {sentence_count} in {text!r}")
+sentence_counts = [sum(line.count(mark) for mark in ".!?") for line in lines]
+if sentence_counts != [1, 1, 1]:
+    raise SystemExit(f"status task expected exactly 1 sentence per line, got {sentence_counts} in {text!r}")
 print(text)
 PY
 )"
@@ -188,6 +202,14 @@ from pathlib import Path
 raw = Path(sys.argv[1]).read_text(encoding="utf-8")
 decoder = json.JSONDecoder()
 payload = None
+def result_payload(candidate):
+    if not isinstance(candidate, dict):
+        return None
+    if isinstance(candidate.get("result"), dict):
+        return candidate["result"]
+    if isinstance(candidate.get("payloads"), list):
+        return candidate
+    return None
 for index, char in enumerate(raw):
     if char != "{":
         continue
@@ -195,11 +217,12 @@ for index, char in enumerate(raw):
         candidate, _ = decoder.raw_decode(raw[index:])
     except json.JSONDecodeError:
         continue
-    if isinstance(candidate, dict) and "result" in candidate:
-        payload = candidate
+    result = result_payload(candidate)
+    if result is not None:
+        payload = result
 if payload is None:
     raise SystemExit(f"plan task missing JSON result payload in {sys.argv[1]}")
-text = payload["result"]["payloads"][0]["text"].strip()
+text = payload["payloads"][0]["text"].strip()
 lines = [line.strip() for line in text.splitlines() if line.strip()]
 bullets = [line for line in lines if line.startswith("- ")]
 if len(bullets) != 3:

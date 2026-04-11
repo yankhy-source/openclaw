@@ -159,6 +159,14 @@ with open(path, "r", encoding="utf-8") as handle:
     raw = handle.read()
 decoder = json.JSONDecoder()
 payload = None
+def result_payload(candidate):
+    if not isinstance(candidate, dict):
+        return None
+    if isinstance(candidate.get("result"), dict):
+        return candidate["result"]
+    if isinstance(candidate.get("payloads"), list):
+        return candidate
+    return None
 for index, char in enumerate(raw):
     if char != "{":
         continue
@@ -166,11 +174,12 @@ for index, char in enumerate(raw):
         candidate, _ = decoder.raw_decode(raw[index:])
     except json.JSONDecodeError:
         continue
-    if isinstance(candidate, dict) and "result" in candidate:
-        payload = candidate
+    result = result_payload(candidate)
+    if result is not None:
+        payload = result
 if payload is None:
     raise SystemExit(f"{path}: missing JSON payload")
-meta = payload["result"]["meta"]["agentMeta"]
+meta = payload["meta"]["agentMeta"]
 provider = meta["provider"]
 model = meta["model"]
 if provider != expected_provider or model != expected_model:

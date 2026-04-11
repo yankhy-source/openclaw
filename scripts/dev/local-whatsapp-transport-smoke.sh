@@ -152,6 +152,14 @@ if token not in tail or "Sent message" not in tail:
 raw = Path(json_path).read_text(encoding="utf-8", errors="replace")
 decoder = json.JSONDecoder()
 payload = None
+def result_payload(candidate):
+    if not isinstance(candidate, dict):
+        return None
+    if isinstance(candidate.get("result"), dict):
+        return candidate["result"]
+    if isinstance(candidate.get("payloads"), list):
+        return candidate
+    return None
 for index, char in enumerate(raw):
     if char != "{":
         continue
@@ -159,8 +167,9 @@ for index, char in enumerate(raw):
         candidate, _ = decoder.raw_decode(raw[index:])
     except json.JSONDecodeError:
         continue
-    if isinstance(candidate, dict) and isinstance(candidate.get("result"), dict):
-        payload = candidate["result"]
+    result = result_payload(candidate)
+    if result is not None:
+        payload = result
 if payload is None:
     raise SystemExit(f"{json_path}: missing JSON result payload")
 meta = payload.get("meta", {}).get("agentMeta", {})

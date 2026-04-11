@@ -156,6 +156,14 @@ from pathlib import Path
 raw = Path(sys.argv[1]).read_text(encoding="utf-8")
 decoder = json.JSONDecoder()
 payload = None
+def result_payload(candidate):
+    if not isinstance(candidate, dict):
+        return None
+    if isinstance(candidate.get("result"), dict):
+        return candidate["result"]
+    if isinstance(candidate.get("payloads"), list):
+        return candidate
+    return None
 for index, char in enumerate(raw):
     if char != "{":
         continue
@@ -163,11 +171,12 @@ for index, char in enumerate(raw):
         candidate, _ = decoder.raw_decode(raw[index:])
     except json.JSONDecodeError:
         continue
-    if isinstance(candidate, dict) and "result" in candidate:
-        payload = candidate
+    result = result_payload(candidate)
+    if result is not None:
+        payload = result
 if payload is None:
     raise SystemExit(f"task 1 missing JSON result payload in {sys.argv[1]}")
-text = payload["result"]["payloads"][0]["text"]
+text = payload["payloads"][0]["text"]
 if "whatsapp" not in text.lower():
     raise SystemExit(f"task 1 missing expected concepts in {text!r}")
 if not any(token in text.lower() for token in ["lokal", "agent"]):
@@ -198,6 +207,14 @@ from pathlib import Path
 raw = Path(sys.argv[1]).read_text(encoding="utf-8")
 decoder = json.JSONDecoder()
 payload = None
+def result_payload(candidate):
+    if not isinstance(candidate, dict):
+        return None
+    if isinstance(candidate.get("result"), dict):
+        return candidate["result"]
+    if isinstance(candidate.get("payloads"), list):
+        return candidate
+    return None
 for index, char in enumerate(raw):
     if char != "{":
         continue
@@ -205,11 +222,12 @@ for index, char in enumerate(raw):
         candidate, _ = decoder.raw_decode(raw[index:])
     except json.JSONDecodeError:
         continue
-    if isinstance(candidate, dict) and "result" in candidate:
-        payload = candidate
+    result = result_payload(candidate)
+    if result is not None:
+        payload = result
 if payload is None:
     raise SystemExit(f"task 2 missing JSON result payload in {sys.argv[1]}")
-text = payload["result"]["payloads"][0]["text"].strip()
+text = payload["payloads"][0]["text"].strip()
 lines = [line.strip() for line in text.splitlines() if line.strip()]
 bullets = [line for line in lines if line.startswith("- ")]
 if len(bullets) != 3:
