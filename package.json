@@ -1191,6 +1191,8 @@
     "qa:local-agents:whatsapp-smoke": "bash scripts/dev/local-whatsapp-client-smoke.sh",
     "qa:local-agents:human-eval": "bash scripts/dev/local-human-perspective-eval.sh",
     "qa:local-agents:human-whatsapp-eval": "bash scripts/dev/local-human-whatsapp-eval.sh",
+    "qa:local-agents:project-scout-hook-smoke": "node scripts/dev/local-project-scout-hook-smoke.mjs",
+    "qa:local-agents:human-project-scout-eval": "bash scripts/dev/local-human-project-scout-eval.sh",
     "qa:local-agents:human-whatsapp-conversation-eval": "bash scripts/dev/local-human-whatsapp-conversation-eval.sh",
     "qa:local-agents:human-whatsapp-resume-eval": "bash scripts/dev/local-human-whatsapp-resume-eval.sh",
     "qa:local-agents:human-whatsapp-resume-failure-eval": "bash scripts/dev/local-human-whatsapp-resume-failure-eval.sh",

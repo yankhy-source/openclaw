@@ -1,0 +1,10 @@
+{
+  "id": "local-project-scout",
+  "name": "Local Project Scout",
+  "description": "Deterministic local project answers for Mac and workspace discovery prompts.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}

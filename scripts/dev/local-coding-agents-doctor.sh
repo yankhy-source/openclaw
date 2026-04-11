@@ -81,11 +81,15 @@ if required_mode and required_mode not in {"core", "live"}:
 
 main_primary_model = "openai-codex/gpt-5.3-codex-spark"
 main_fallbacks = [
-    "heretic-local/qwen3-4b-instruct-2507",
+    "openai/gpt-4.1",
+    "qwen-portal/coder-model",
+    "claude-bridge/claude-sonnet",
     "groq/llama-3.3-70b-versatile",
     "groq/deepseek-r1-distill-llama-70b",
     "google-gemini/gemini-2.0-flash",
+    "heretic-local/qwen3-4b-instruct-2507",
 ]
+human_fallbacks = ["heretic-local/qwen3-4b-instruct-2507", *main_fallbacks]
 shared_skill_ids = ["claw-code-local", "main-tool-discipline", "main-human-operator"]
 agent_ids = ["oc-builder", "oc-github", "claw-code"]
 human_eval_agent_ids = ["oc-human-main", "oc-human-builder"]
@@ -174,7 +178,7 @@ if isinstance(config, dict):
         model = main_agent.get("model") if isinstance(main_agent.get("model"), dict) else {}
         require(model.get("primary") == main_primary_model, "main_primary_mismatch", f"main.model.primary must be {main_primary_model}")
         fallbacks = model.get("fallbacks") if isinstance(model.get("fallbacks"), list) else []
-        for fallback in main_fallbacks:
+        for fallback in human_fallbacks:
             require(fallback in fallbacks, "main_fallback_missing", f"main.model.fallbacks missing {fallback}")
         subagents = main_agent.get("subagents") if isinstance(main_agent.get("subagents"), dict) else {}
         require(subagents.get("model") == main_primary_model, "main_subagent_model_mismatch", f"main.subagents.model must be {main_primary_model}")
@@ -204,8 +208,8 @@ if isinstance(config, dict):
         "oc-builder": {"workspace": str(repo_root), "model": main_primary_model, "fallbacks": main_fallbacks},
         "oc-github": {"workspace": str(repo_root), "model": main_primary_model, "fallbacks": main_fallbacks},
         "claw-code": {"workspace": str(parity_root), "model": main_primary_model, "fallbacks": main_fallbacks},
-        "oc-human-main": {"workspace": str(repo_root), "model": main_primary_model, "fallbacks": main_fallbacks, "subagents_model": main_primary_model, "allow_agents": ["oc-human-builder"]},
-        "oc-human-builder": {"workspace": str(repo_root), "model": main_primary_model, "fallbacks": main_fallbacks},
+        "oc-human-main": {"workspace": str(repo_root), "model": main_primary_model, "fallbacks": human_fallbacks, "subagents_model": main_primary_model, "allow_agents": ["oc-human-builder"]},
+        "oc-human-builder": {"workspace": str(repo_root), "model": main_primary_model, "fallbacks": human_fallbacks},
         "oc-human-source": {"workspace": str(repo_root), "model": main_primary_model, "fallbacks": []},
         "oc-human-recovery": {"workspace": str(repo_root), "model": main_primary_model, "fallbacks": []},
     }

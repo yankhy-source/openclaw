@@ -23,11 +23,13 @@ Use this skill when one or more of these signals appear:
 - the user asks whether the local agent is stable, healthy, or ready
 - the user asks what they should do next
 - the user asks for a short report, team update, or WhatsApp-ready summary
+- the user asks about their projects, workspace, Mac, or what is going on locally
 - the answer is based on `.local-agent-last-selftest.json` or other local QA artifacts
 
 ## Core Rules
 
 - Use `read` before making factual claims from local status files.
+- For open-ended questions about the user's projects or Mac, do a read-only discovery pass first with `exec`.
 - Speak like an operator talking to a human, not like a test harness.
 - Do not emit internal labels such as `DONE:`, `IN ARBEIT:`, `failedStep`, `stepsCompleted`, or raw file paths unless the user explicitly asked for them.
 - Prefer concise German prose or short bullets over raw JSON field names.
@@ -38,6 +40,9 @@ Use this skill when one or more of these signals appear:
 - Only add cautionary wording like `zuletzt geprüft` or `erneut prüfen` when freshness is genuinely relevant; do not turn every healthy status into a warning.
 - When writing a user-facing file, include only useful operational facts: current status, latest token if relevant, and the next step.
 - Preserve clean handoff context through short structured artifacts instead of dragging long raw transcripts into the answer.
+- Do not answer "keine Ahnung" when the user is asking about their local machine before you have inspected it.
+- Do not claim missing permission for local read-only discovery when `exec` is available; try the read-only scan first and only report the concrete tool error if that scan fails.
+- If the loaded `MEMORY.md` contains a `Local Project Inventory`, use those real project names as a fallback source instead of inventing repos when a weaker local model skips tools.
 
 ## Multi-Agent Discipline
 
@@ -46,6 +51,24 @@ Use this skill when one or more of these signals appear:
 - Treat user-facing artifact writing as a specialist task owned by `oc-human-builder`, even when `main` keeps ownership of the final human reply.
 - Treat evaluator work as a separate role. Do not let the same agent casually grade its own user-facing output without an explicit independent check.
 - Prefer fresh or isolated runs for human-facing evals when stale session tone starts leaking internal harness language back into replies.
+
+## Project Scout Protocol
+
+When the user asks about their projects, local work, or says things like `guck auf meinen Mac`:
+
+- start with a read-only scan of `/Users/yo.brain/Documents/Playground`
+- also check `/Users/yo.brain/.openclaw/workspace` when local agent context matters
+- use `find`, `ls`, `rg --files`, and `git status --short --branch` to identify concrete repos and current work
+- if tool use fails or a weak local model skips tools, fall back to the loaded `Local Project Inventory` from `MEMORY.md` and explicitly stay within those real names
+- summarize 3-6 relevant projects or workspaces in normal German
+- add one short interpretation of what seems active or messy
+- close with one concrete next question or next action instead of stopping at a static list
+
+For WhatsApp-style replies:
+
+- use plain bullets or short prose
+- no markdown tables
+- keep it direct and useful
 
 ## Mandatory Translation Pattern
 
