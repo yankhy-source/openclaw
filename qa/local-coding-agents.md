@@ -336,7 +336,7 @@ command, so `claw-code-local summary` is not a stable probe.
 - the run first confirms or refreshes a fresh enough live selftest baseline
 - the status proof uses a run-specific copied summary file, so the live check cannot pass purely from remembered prior state
 - the run writes a consistency report for the status context, so the summary records whether token/session binding passed cleanly before the user-facing answer was sent
-- that consistency report now also carries `decisionSource`, `decisionReason`, `expectedSummary`, `actualSummary`, `deviationSummary`, a compact `causeLine`, and a user-facing mismatch report, so fallback reasons are visible without opening raw snapshots
+- that consistency report now also carries `decisionSource`, `decisionReason`, `expectedSummary`, `actualSummary`, `deviationSummary`, a compact `causeLine`, and a fixed user-facing report template for every run (`erwartet=...; tatsaechlich=...; abweichung=...; quelle=...`), so fallback reasons are visible without opening raw snapshots
 
 ## What the Intelligence Loop Verifies
 
@@ -364,7 +364,7 @@ command, so `claw-code-local summary` is not a stable probe.
 - the resume turn switches to `sessions_history` instead of trusting the broken resume snapshot
 - the conversation and resume fallback paths still share one verified live WhatsApp token and manager session id from the same baseline
 - the mismatch reason is written into step-level consistency reports, not only implied by the fallback mode
-- those reports now expose the chosen source (`decisionSource`), a short source explanation (`decisionReason`), one compact `causeLine`, and a user-facing mismatch report with expected value, actual value, detected deviation, and fallback justification
+- those reports now expose the chosen source (`decisionSource`), a short source explanation (`decisionReason`), one compact `causeLine`, and a user-facing report with the same fixed fields in every path: expected value, actual value, detected deviation, and source
 
 ## What the Recovery Smoke Verifies
 

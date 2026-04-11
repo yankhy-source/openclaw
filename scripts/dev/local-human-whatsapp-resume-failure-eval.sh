@@ -316,11 +316,17 @@ if text.count(marker) != 1:
     raise SystemExit(f"artifact must contain marker exactly once: {marker!r} in {text!r}")
 if text.count(source_tag) != 1:
     raise SystemExit(f"artifact must contain source tag exactly once: {source_tag!r} in {text!r}")
+if text.count(f"Kennung: {source_tag}") != 1:
+    raise SystemExit(f"artifact must contain a single dedicated source tag line: {source_tag!r} in {text!r}")
+if text.count(f"Merkwort: {marker}") != 1:
+    raise SystemExit(f"artifact must contain a single dedicated marker line: {marker!r} in {text!r}")
 if conflict_marker in text or conflict_tag in text:
     raise SystemExit(f"artifact leaked rejected conflict values: {text!r}")
 if not any(term in text.lower() for term in ["widerspruch", "verworfen", "history", "historie"]):
     raise SystemExit(f"artifact must explain the conflict rejection: {text!r}")
 blocked = [
+    "Nutzer-Nachricht:",
+    "Assistant-Antwort:",
     ".local-agent-last-selftest.json",
     ".local-agent-last-human-whatsapp-resume-failure-eval.json",
     "failedStep",
@@ -667,7 +673,7 @@ else
   SOURCE_BEFORE_LINES="$(session_line_count "$SOURCE_SESSION")"
 fi
 run_source_whatsapp_json "$TURN1_JSON" \
-  --message "Ich bin der Nutzer. Das ist die Resume-Failure-Quelle mit Kennung $SOURCE_TAG. Antworte auf Deutsch in 2-3 kurzen Sätzen: bestätige, dass wir diesen Recovery-Kontext fortsetzen, und sag, welches Merkwort wir jetzt nutzen. Verwende das Merkwort $RESUME_FAILURE_MARKER genau einmal. Keine Testreport-Sprache, keine Dateinamen, keine JSON-Feldnamen, keine Labels wie DONE oder IN ARBEIT."
+  --message "Ich bin der Nutzer. Das ist die Resume-Failure-Quelle mit Kennung $SOURCE_TAG. Antworte auf Deutsch in 2-3 kurzen Sätzen: bestätige, dass wir diesen Recovery-Kontext fortsetzen, und sag, welches Merkwort wir jetzt nutzen. Verwende das Merkwort $RESUME_FAILURE_MARKER genau einmal. Wiederhole die Kennung nicht. Keine Testreport-Sprache, keine Dateinamen, keine JSON-Feldnamen, keine Labels wie DONE oder IN ARBEIT."
 if [[ -z "$SOURCE_SESSION" || ! -f "$SOURCE_SESSION" ]]; then
   SOURCE_SESSION="$(wait_for_agent_main_session_jsonl "$SOURCE_AGENT_ID" 40 1)"
 fi
@@ -748,6 +754,7 @@ RECOVERY_CONTEXT_REPORT_REASON_CODES="$WHATSAPP_CONTEXT_REASON_CODES"
 RECOVERY_CONTEXT_REPORT_REASON_SUMMARY="$WHATSAPP_CONTEXT_REASON_SUMMARY"
 RECOVERY_CONTEXT_REPORT_DECISION_SOURCE="$WHATSAPP_CONTEXT_DECISION_SOURCE"
 RECOVERY_CONTEXT_REPORT_CAUSE_LINE="$WHATSAPP_CONTEXT_CAUSE_LINE"
+assert_whatsapp_context_user_facing_report_template "${WHATSAPP_CONTEXT_USER_FACING_REPORT:-}" "${WHATSAPP_CONTEXT_DECISION_SOURCE:-}" "recovery context"
 if [[ "$WHATSAPP_CONTEXT_OK" != "1" ]]; then
   RECOVERY_CONTEXT_MODE="history_only_unverified"
 fi
@@ -765,7 +772,7 @@ else
   RECOVERY_BEFORE_LINES="$(session_line_count "$RECOVERY_SESSION")"
 fi
 run_recovery_whatsapp_json "$TURN2_JSON" \
-  --message "Ich komme in einer frischen Agent-Session nach einer Unterbrechung zurück. Dein eigener Chatkontext enthält das Merkwort nicht. Rufe als allerersten Toolschritt genau sessions_history für sessionKey $SOURCE_SESSION_KEY mit includeTools=true und limit 40 auf. Benutze nicht sessions_list. Rekonstruiere daraus ausschließlich die neueste User-Nachricht, die exakt die Kennung $SOURCE_TAG enthält, plus die unmittelbar folgende Assistant-Antwort. Verwende kein Merkwort aus älteren Kennungen oder älteren Läufen derselben Session. Bestimme daraus das genaue Merkwort plus den nächsten Schritt. Lies danach exakt die Konfliktdatei $CONFLICT_NOTE_REL. Diese Konfliktdatei ist absichtlich widersprüchlich und darf nur als negative Gegenprobe dienen. Wenn Konfliktdatei und History widersprechen, gewinnt immer sessions_history; verwerfe die Konfliktwerte vollständig. Du brauchst dafür keine alten Dateien erneut zu öffnen. Wenn in der History ein Pfad außerhalb deines Workspace auftaucht, ignoriere ihn. Benutze kein process und keine langen Suchläufe über ~/.openclaw. Falls du exec nutzt, dann nur kurz und lokal im aktuellen Workspace. Überschreibe danach exakt die bereits existierende Datei $ARTIFACT_REL mit Markdown: '# Recovery Note', '## Rekonstruktion', '## Konsistenzprüfung', '## Nächster Schritt'. Nutze das rekonstruierte Merkwort genau einmal im Dateiinhalt und die rekonstruierte Kennung $SOURCE_TAG genau einmal im Dateiinhalt. Erkläre in der Konsistenzprüfung kurz, dass die widersprüchliche Notiz verworfen wurde, ohne deren falsche Werte zu wiederholen. Lies die geschriebene Datei danach per read zur Verifikation. Antworte mir danach auf Deutsch in genau 2 kurzen Sätzen: welches Merkwort wir benutzt haben und was ich als Nächstes tun sollte. Verwende das Merkwort genau einmal. Wiederhole keine Konfliktwerte. Keine Dateipfade, keine Testreport-Sprache, keine JSON-Feldnamen, keine Labels wie DONE oder IN ARBEIT. Ohne sessions_history darfst du nicht abschließen."
+  --message "Ich komme in einer frischen Agent-Session nach einer Unterbrechung zurück. Dein eigener Chatkontext enthält das Merkwort nicht. Rufe als allerersten Toolschritt genau sessions_history für sessionKey $SOURCE_SESSION_KEY mit includeTools=true und limit 40 auf. Benutze nicht sessions_list. Rekonstruiere daraus ausschließlich die neueste User-Nachricht, die exakt die Kennung $SOURCE_TAG enthält, plus die unmittelbar folgende Assistant-Antwort. Verwende kein Merkwort aus älteren Kennungen oder älteren Läufen derselben Session. Bestimme daraus das genaue Merkwort plus den nächsten Schritt. Lies danach exakt die Konfliktdatei $CONFLICT_NOTE_REL. Diese Konfliktdatei ist absichtlich widersprüchlich und darf nur als negative Gegenprobe dienen. Wenn Konfliktdatei und History widersprechen, gewinnt immer sessions_history; verwerfe die Konfliktwerte vollständig. Du brauchst dafür keine alten Dateien erneut zu öffnen. Wenn in der History ein Pfad außerhalb deines Workspace auftaucht, ignoriere ihn. Benutze kein process und keine langen Suchläufe über ~/.openclaw. Falls du exec nutzt, dann nur kurz und lokal im aktuellen Workspace. Überschreibe danach exakt die bereits existierende Datei $ARTIFACT_REL mit Markdown in diesem festen Schema: '# Recovery Note', '## Rekonstruktion', 'Kennung: $SOURCE_TAG', 'Merkwort: $RESUME_FAILURE_MARKER', ein kurzer Satz zur Rekonstruktion aus der neuesten sessions_history-Nachricht plus direkter Assistant-Antwort, dann '## Konsistenzprüfung' mit einem kurzen Satz, dass die widersprüchliche Notiz verworfen wurde, und dann '## Nächster Schritt' mit genau einem kurzen Satz zum nächsten Schritt. Die Kennung $SOURCE_TAG darf im Dateiinhalt nur in der Zeile 'Kennung: $SOURCE_TAG' vorkommen. Das Merkwort $RESUME_FAILURE_MARKER darf im Dateiinhalt nur in der Zeile 'Merkwort: $RESUME_FAILURE_MARKER' vorkommen. Wiederhole keine Konfliktwerte und zitiere nicht wörtlich als 'Nutzer-Nachricht' oder 'Assistant-Antwort'. Lies die geschriebene Datei danach per read zur Verifikation. Antworte mir danach auf Deutsch in genau 2 kurzen Sätzen: welches Merkwort wir benutzt haben und was ich als Nächstes tun sollte. Verwende das Merkwort genau einmal und wiederhole die Kennung nicht. Keine Dateipfade, keine Testreport-Sprache, keine JSON-Feldnamen, keine Labels wie DONE oder IN ARBEIT. Ohne sessions_history darfst du nicht abschließen."
 if [[ -z "$RECOVERY_SESSION" || ! -f "$RECOVERY_SESSION" ]]; then
   RECOVERY_SESSION="$(wait_for_agent_main_session_jsonl "$RECOVERY_AGENT_ID" 40 1)"
 fi

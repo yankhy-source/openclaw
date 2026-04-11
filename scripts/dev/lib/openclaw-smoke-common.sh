@@ -447,17 +447,79 @@ if kind == "resume-failure-recovery":
     require_abs_path("artifactPath", must_exist=False, allow_parent=True)
     require_abs_path("conflictNotePath")
 
+def basename_or_value(value):
+    if not value:
+        return None
+    try:
+        return Path(value).name
+    except Exception:
+        return value
+
+def build_compact_success_summaries():
+    expected_items = []
+    actual_items = []
+
+    def add_item(label, expected, actual):
+        if actual in (None, "") and expected in (None, ""):
+            return
+        expected_value = actual if expected in (None, "") else expected
+        actual_value = "missing" if actual in (None, "") else actual
+        expected_items.append(f"{label}={expected_value}")
+        actual_items.append(f"{label}={actual_value}")
+
+    add_item("summaryStatus", "passed", summary_payload.get("status") if isinstance(summary_payload, dict) else None)
+    add_item("summaryMode", "live", summary_payload.get("mode") if isinstance(summary_payload, dict) else None)
+    add_item("whatsappToken", summary_payload.get("whatsappToken") if isinstance(summary_payload, dict) else whatsapp_token, whatsapp_token)
+    add_item(
+        "managerSessionId",
+        summary_payload.get("managerSessionId") if isinstance(summary_payload, dict) else manager_session_id,
+        manager_session_id,
+    )
+
+    if kind == "whatsapp-status":
+        add_item("statusArtifact", basename_or_value(context.get("statusPath")), basename_or_value(context.get("statusPath")))
+        add_item("planArtifact", basename_or_value(context.get("planPath")), basename_or_value(context.get("planPath")))
+    elif kind == "conversation-turn2":
+        add_item("marker", context.get("marker"), context.get("marker"))
+        add_item("turn1Artifact", basename_or_value(context.get("turn1Path")), basename_or_value(context.get("turn1Path")))
+    elif kind == "conversation-turn3":
+        add_item("marker", context.get("marker"), context.get("marker"))
+        add_item("builderAgentId", context.get("builderAgentId"), context.get("builderAgentId"))
+        add_item("artifactFile", basename_or_value(context.get("artifactPath")), basename_or_value(context.get("artifactPath")))
+    elif kind == "resume-turn2":
+        add_item("marker", context.get("marker"), context.get("marker"))
+        add_item("turn1Artifact", basename_or_value(context.get("turn1Path")), basename_or_value(context.get("turn1Path")))
+    elif kind == "resume-failure-recovery":
+        add_item("resumeMarker", context.get("resumeMarker"), context.get("resumeMarker"))
+        add_item("sourceTag", context.get("sourceTag"), context.get("sourceTag"))
+        add_item("artifactFile", basename_or_value(context.get("artifactPath")), basename_or_value(context.get("artifactPath")))
+        add_item(
+            "toolModelPrecheckToken",
+            context.get("toolModelPrecheckToken"),
+            context.get("toolModelPrecheckToken"),
+        )
+
+    expected_summary = ", ".join(item for item in expected_items if item)
+    actual_summary = ", ".join(item for item in actual_items if item)
+    if not expected_summary:
+        expected_summary = "validated_context=ok"
+    if not actual_summary:
+        actual_summary = "validated_context=ok"
+    return expected_summary, actual_summary
+
 failed_checks = [check for check in checks if check["status"] == "error"]
 if failed_checks:
     primary_check = failed_checks[0]
-    expected_summary = primary_check.get("expected") or "validierter Kontextwert"
-    actual_summary = primary_check.get("actual") or "fehlend"
+    primary_field = primary_check.get("field") or "context"
+    expected_value = primary_check.get("expected") or "validierter Kontextwert"
+    actual_value = primary_check.get("actual") or "fehlend"
+    expected_summary = f"{primary_field}={expected_value}"
+    actual_summary = f"{primary_field}={actual_value}"
     deviation_summary = primary_check.get("message") or primary_check.get("code") or "Abweichung erkannt"
     decision_source = fallback_source
 else:
     primary_check = None
-    expected_summary = "alle relevanten Token-, Session- und Marker-Prüfungen stimmen mit dem verifizierten Snapshot überein"
-    actual_summary = "alle relevanten Konsistenzprüfungen wurden erfolgreich bestätigt"
+    expected_summary, actual_summary = build_compact_success_summaries()
     deviation_summary = "keine"
     decision_source = success_source
 
@@ -470,7 +532,6 @@ if not errors:
         decision_reason = "Ich nutze validated_snapshot, weil der kopierte Live-Snapshot ohne Abweichung zum aktuellen Lauf passt."
     else:
         decision_reason = f"Ich nutze {decision_source}, weil der verifizierte Kontext ohne Abweichung zum aktuellen Lauf passt."
-    user_facing_report = ""
 else:
     if decision_source == "sessions_history":
         decision_reason = "Ich nutze sessions_history, weil der verifizierte Snapshot abweicht und die Sitzungshistorie den letzten belastbaren Stand liefert."
@@ -478,13 +539,14 @@ else:
         decision_reason = "Ich breche den Lauf ab, weil der verifizierte Snapshot abweicht und kein sicherer Rueckfallpfad freigegeben ist."
     else:
         decision_reason = f"Ich nutze {decision_source}, weil der verifizierte Snapshot abweicht und dieser Pfad als sicherer Rueckfall freigegeben ist."
-    user_facing_report = (
-        "Kontext-Report: "
-        f"erwartet={expected_summary}; "
-        f"tatsaechlich={actual_summary}; "
-        f"abweichung={deviation_summary}; "
-        f"entscheidung={decision_reason}"
-    )
+
+user_facing_report = (
+    "Kontext-Report: "
+    f"erwartet={expected_summary}; "
+    f"tatsaechlich={actual_summary}; "
+    f"abweichung={deviation_summary}; "
+    f"quelle={decision_source} ({decision_reason})"
+)
 
 cause_line = (
     f"erwartet={expected_summary} | "
@@ -536,6 +598,32 @@ print(f'WHATSAPP_CONTEXT_CAUSE_LINE={json.dumps(report["causeLine"])}')
 print(f'WHATSAPP_CONTEXT_USER_FACING_REPORT={json.dumps(report["userFacingReport"])}')
 print(f'WHATSAPP_CONTEXT_REPORT_PATH={json.dumps(str(report_path))}')
 PY
+}
+
+assert_whatsapp_context_user_facing_report_template() {
+  local report="${1:-}"
+  local expected_source="${2:-}"
+  local label="${3:-context}"
+  if [[ -z "$report" ]]; then
+    echo "$label user-facing report missing" >&2
+    return 1
+  fi
+  if [[ "$report" != Kontext-Report:* ]]; then
+    echo "$label user-facing report missing Kontext-Report prefix: $report" >&2
+    return 1
+  fi
+  if [[ "$report" != *"erwartet="* || "$report" != *"tatsaechlich="* || "$report" != *"abweichung="* || "$report" != *"quelle="* ]]; then
+    echo "$label user-facing report missing required template fields: $report" >&2
+    return 1
+  fi
+  if [[ "$report" == *"entscheidung="* ]]; then
+    echo "$label user-facing report still uses entscheidung field: $report" >&2
+    return 1
+  fi
+  if [[ -n "$expected_source" && "$report" != *"quelle=${expected_source}"* ]]; then
+    echo "$label user-facing report has unexpected source (expected $expected_source): $report" >&2
+    return 1
+  fi
 }
 
 verify_whatsapp_run_context_json() {
