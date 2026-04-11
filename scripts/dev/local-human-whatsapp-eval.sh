@@ -16,6 +16,7 @@ SUMMARY_SNAPSHOT_PATH=""
 STATUS_JSON=""
 PLAN_JSON=""
 STATUS_CONTEXT_PATH=""
+STATUS_CONTEXT_REPORT_PATH=""
 SELF_E164=""
 EVAL_STARTED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 EVAL_STATUS="failed"
@@ -25,6 +26,9 @@ PLAN_TEXT=""
 VERIFIED_WHATSAPP_TOKEN=""
 VERIFIED_MANAGER_SESSION_ID=""
 VERIFIED_SELFTEST_ARTIFACT_ROOT=""
+STATUS_CONTEXT_REPORT_STATUS=""
+STATUS_CONTEXT_REPORT_REASON_CODES=""
+STATUS_CONTEXT_REPORT_REASON_SUMMARY=""
 
 if [[ -d "$NODE22_BIN" ]]; then
   PATH="$NODE22_BIN:$PATH"
@@ -45,6 +49,7 @@ fi
 STATUS_JSON="$EVAL_ROOT/status.json"
 PLAN_JSON="$EVAL_ROOT/plan.json"
 STATUS_CONTEXT_PATH="$EVAL_ROOT/status-context.json"
+STATUS_CONTEXT_REPORT_PATH="$EVAL_ROOT/status-consistency.json"
 
 source "$SCRIPT_DIR/lib/openclaw-smoke-common.sh"
 
@@ -86,7 +91,11 @@ write_eval_summary() {
     "$PLAN_TEXT" \
     "$SELF_E164" \
     "$VERIFIED_WHATSAPP_TOKEN" \
-    "$VERIFIED_MANAGER_SESSION_ID"
+    "$VERIFIED_MANAGER_SESSION_ID" \
+    "$STATUS_CONTEXT_REPORT_PATH" \
+    "$STATUS_CONTEXT_REPORT_STATUS" \
+    "$STATUS_CONTEXT_REPORT_REASON_CODES" \
+    "$STATUS_CONTEXT_REPORT_REASON_SUMMARY"
 import json, pathlib, sys
 
 summary_paths = [pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])]
@@ -106,6 +115,10 @@ payload = {
     "selfE164": sys.argv[14] or None,
     "verifiedWhatsappToken": sys.argv[15] or None,
     "verifiedManagerSessionId": sys.argv[16] or None,
+    "statusContextReportPath": sys.argv[17] or None,
+    "statusContextReportStatus": sys.argv[18] or None,
+    "statusContextReportReasonCodes": sys.argv[19] or None,
+    "statusContextReportReasonSummary": sys.argv[20] or None,
 }
 for summary_path in summary_paths:
     summary_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
@@ -172,7 +185,14 @@ payload = {
 path = pathlib.Path(context_path)
 path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 PY
-verify_whatsapp_run_context_json "$STATUS_CONTEXT_PATH"
+eval "$(inspect_whatsapp_run_context_json "$STATUS_CONTEXT_PATH" "$STATUS_CONTEXT_REPORT_PATH")"
+STATUS_CONTEXT_REPORT_STATUS="$WHATSAPP_CONTEXT_STATUS"
+STATUS_CONTEXT_REPORT_REASON_CODES="$WHATSAPP_CONTEXT_REASON_CODES"
+STATUS_CONTEXT_REPORT_REASON_SUMMARY="$WHATSAPP_CONTEXT_REASON_SUMMARY"
+if [[ "$WHATSAPP_CONTEXT_OK" != "1" ]]; then
+  echo "status context consistency failed: $STATUS_CONTEXT_REPORT_REASON_SUMMARY" >&2
+  exit 1
+fi
 
 echo "== whatsapp human status eval =="
 MAIN_SESSION="$(agent_main_session_jsonl "$WHATSAPP_AGENT_ID")"

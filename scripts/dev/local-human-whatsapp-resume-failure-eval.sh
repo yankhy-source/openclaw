@@ -26,6 +26,7 @@ TOOL_MODEL_PRECHECK_REL=""
 ARTIFACT_PATH=""
 ARTIFACT_REL=""
 RECOVERY_CONTEXT_PATH=""
+RECOVERY_CONTEXT_REPORT_PATH=""
 CONFLICT_NOTE_PATH=""
 CONFLICT_NOTE_REL=""
 CONFLICT_NOTE_TEXT=""
@@ -41,6 +42,9 @@ RECOVERY_CONTEXT_MODE="history_only"
 VERIFIED_WHATSAPP_TOKEN=""
 VERIFIED_MANAGER_SESSION_ID=""
 VERIFIED_SELFTEST_ARTIFACT_ROOT=""
+RECOVERY_CONTEXT_REPORT_STATUS=""
+RECOVERY_CONTEXT_REPORT_REASON_CODES=""
+RECOVERY_CONTEXT_REPORT_REASON_SUMMARY=""
 RESUME_FAILURE_MARKER="nebelstern-$(python3 - <<'PY'
 import uuid
 print(uuid.uuid4().hex[:10])
@@ -96,6 +100,7 @@ TOOL_MODEL_PRECHECK_REL="${TOOL_MODEL_PRECHECK_PATH#"$REPO_ROOT/"}"
 ARTIFACT_PATH="$EVAL_ROOT/recovery-note.md"
 ARTIFACT_REL="${ARTIFACT_PATH#"$REPO_ROOT/"}"
 RECOVERY_CONTEXT_PATH="$EVAL_ROOT/recovery-context.json"
+RECOVERY_CONTEXT_REPORT_PATH="$EVAL_ROOT/recovery-consistency.json"
 CONFLICT_NOTE_PATH="$EVAL_ROOT/conflicting-note.md"
 CONFLICT_NOTE_REL="${CONFLICT_NOTE_PATH#"$REPO_ROOT/"}"
 
@@ -447,7 +452,11 @@ write_eval_summary() {
     "$RECOVERY_AGENT_ID" \
     "$VERIFIED_WHATSAPP_TOKEN" \
     "$VERIFIED_MANAGER_SESSION_ID" \
-    "$RECOVERY_CONTEXT_MODE"
+    "$RECOVERY_CONTEXT_MODE" \
+    "$RECOVERY_CONTEXT_REPORT_PATH" \
+    "$RECOVERY_CONTEXT_REPORT_STATUS" \
+    "$RECOVERY_CONTEXT_REPORT_REASON_CODES" \
+    "$RECOVERY_CONTEXT_REPORT_REASON_SUMMARY"
 import json, pathlib, sys
 
 summary_paths = [pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])]
@@ -492,6 +501,10 @@ payload = {
     "verifiedWhatsappToken": sys.argv[39] or None,
     "verifiedManagerSessionId": sys.argv[40] or None,
     "recoveryContextMode": sys.argv[41] or None,
+    "recoveryContextReportPath": sys.argv[42] or None,
+    "recoveryContextReportStatus": sys.argv[43] or None,
+    "recoveryContextReportReasonCodes": sys.argv[44] or None,
+    "recoveryContextReportReasonSummary": sys.argv[45] or None,
 }
 for summary_path in summary_paths:
     summary_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
@@ -703,7 +716,11 @@ payload = {
 path = pathlib.Path(context_path)
 path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 PY
-if ! verify_whatsapp_run_context_json "$RECOVERY_CONTEXT_PATH"; then
+eval "$(inspect_whatsapp_run_context_json "$RECOVERY_CONTEXT_PATH" "$RECOVERY_CONTEXT_REPORT_PATH")"
+RECOVERY_CONTEXT_REPORT_STATUS="$WHATSAPP_CONTEXT_STATUS"
+RECOVERY_CONTEXT_REPORT_REASON_CODES="$WHATSAPP_CONTEXT_REASON_CODES"
+RECOVERY_CONTEXT_REPORT_REASON_SUMMARY="$WHATSAPP_CONTEXT_REASON_SUMMARY"
+if [[ "$WHATSAPP_CONTEXT_OK" != "1" ]]; then
   RECOVERY_CONTEXT_MODE="history_only_unverified"
 fi
 

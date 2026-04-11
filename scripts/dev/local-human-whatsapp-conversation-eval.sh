@@ -24,6 +24,8 @@ TURN3_JSON=""
 ARTIFACT_PATH=""
 TURN2_CONTEXT_PATH=""
 TURN3_CONTEXT_PATH=""
+TURN2_CONTEXT_REPORT_PATH=""
+TURN3_CONTEXT_REPORT_PATH=""
 SELF_E164=""
 TURN1_TEXT=""
 TURN2_TEXT=""
@@ -39,6 +41,12 @@ VERIFIED_MANAGER_SESSION_ID=""
 VERIFIED_SELFTEST_ARTIFACT_ROOT=""
 TURN2_CONTEXT_FAULT="${OPENCLAW_HUMAN_WHATSAPP_CONVERSATION_TURN2_CONTEXT_FAULT:-}"
 TURN3_CONTEXT_FAULT="${OPENCLAW_HUMAN_WHATSAPP_CONVERSATION_TURN3_CONTEXT_FAULT:-}"
+TURN2_CONTEXT_REPORT_STATUS=""
+TURN3_CONTEXT_REPORT_STATUS=""
+TURN2_CONTEXT_REPORT_REASON_CODES=""
+TURN3_CONTEXT_REPORT_REASON_CODES=""
+TURN2_CONTEXT_REPORT_REASON_SUMMARY=""
+TURN3_CONTEXT_REPORT_REASON_SUMMARY=""
 CONVERSATION_MARKER="nebelstern-$(python3 - <<'PY'
 import uuid
 print(uuid.uuid4().hex[:10])
@@ -70,6 +78,8 @@ TURN3_JSON="$EVAL_ROOT/turn3-artifact.json"
 ARTIFACT_PATH="$EVAL_ROOT/team-update.md"
 TURN2_CONTEXT_PATH="$EVAL_ROOT/turn2-context.json"
 TURN3_CONTEXT_PATH="$EVAL_ROOT/turn3-context.json"
+TURN2_CONTEXT_REPORT_PATH="$EVAL_ROOT/turn2-consistency.json"
+TURN3_CONTEXT_REPORT_PATH="$EVAL_ROOT/turn3-consistency.json"
 
 source "$SCRIPT_DIR/lib/openclaw-smoke-common.sh"
 
@@ -241,7 +251,15 @@ write_eval_summary() {
     "$TURN2_CONTEXT_MODE" \
     "$TURN3_CONTEXT_MODE" \
     "$TURN2_CONTEXT_FAULT" \
-    "$TURN3_CONTEXT_FAULT"
+    "$TURN3_CONTEXT_FAULT" \
+    "$TURN2_CONTEXT_REPORT_PATH" \
+    "$TURN2_CONTEXT_REPORT_STATUS" \
+    "$TURN2_CONTEXT_REPORT_REASON_CODES" \
+    "$TURN2_CONTEXT_REPORT_REASON_SUMMARY" \
+    "$TURN3_CONTEXT_REPORT_PATH" \
+    "$TURN3_CONTEXT_REPORT_STATUS" \
+    "$TURN3_CONTEXT_REPORT_REASON_CODES" \
+    "$TURN3_CONTEXT_REPORT_REASON_SUMMARY"
 import json, pathlib, sys
 
 summary_paths = [pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])]
@@ -274,6 +292,14 @@ payload = {
     "turn3ContextMode": sys.argv[27] or None,
     "turn2ContextFault": sys.argv[28] or None,
     "turn3ContextFault": sys.argv[29] or None,
+    "turn2ContextReportPath": sys.argv[30] or None,
+    "turn2ContextReportStatus": sys.argv[31] or None,
+    "turn2ContextReportReasonCodes": sys.argv[32] or None,
+    "turn2ContextReportReasonSummary": sys.argv[33] or None,
+    "turn3ContextReportPath": sys.argv[34] or None,
+    "turn3ContextReportStatus": sys.argv[35] or None,
+    "turn3ContextReportReasonCodes": sys.argv[36] or None,
+    "turn3ContextReportReasonSummary": sys.argv[37] or None,
 }
 for summary_path in summary_paths:
     summary_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
@@ -428,7 +454,11 @@ path = pathlib.Path(context_path)
 path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 PY
 apply_whatsapp_run_context_fault "$TURN2_CONTEXT_PATH" "$TURN2_CONTEXT_FAULT"
-if ! verify_whatsapp_run_context_json "$TURN2_CONTEXT_PATH"; then
+eval "$(inspect_whatsapp_run_context_json "$TURN2_CONTEXT_PATH" "$TURN2_CONTEXT_REPORT_PATH")"
+TURN2_CONTEXT_REPORT_STATUS="$WHATSAPP_CONTEXT_STATUS"
+TURN2_CONTEXT_REPORT_REASON_CODES="$WHATSAPP_CONTEXT_REASON_CODES"
+TURN2_CONTEXT_REPORT_REASON_SUMMARY="$WHATSAPP_CONTEXT_REASON_SUMMARY"
+if [[ "$WHATSAPP_CONTEXT_OK" != "1" ]]; then
   TURN2_CONTEXT_MODE="history"
 fi
 
@@ -540,7 +570,11 @@ path = pathlib.Path(context_path)
 path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 PY
 apply_whatsapp_run_context_fault "$TURN3_CONTEXT_PATH" "$TURN3_CONTEXT_FAULT"
-if ! verify_whatsapp_run_context_json "$TURN3_CONTEXT_PATH"; then
+eval "$(inspect_whatsapp_run_context_json "$TURN3_CONTEXT_PATH" "$TURN3_CONTEXT_REPORT_PATH")"
+TURN3_CONTEXT_REPORT_STATUS="$WHATSAPP_CONTEXT_STATUS"
+TURN3_CONTEXT_REPORT_REASON_CODES="$WHATSAPP_CONTEXT_REASON_CODES"
+TURN3_CONTEXT_REPORT_REASON_SUMMARY="$WHATSAPP_CONTEXT_REASON_SUMMARY"
+if [[ "$WHATSAPP_CONTEXT_OK" != "1" ]]; then
   TURN3_CONTEXT_MODE="history"
 fi
 

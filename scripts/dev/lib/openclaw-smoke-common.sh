@@ -230,20 +230,19 @@ print(f'VERIFIED_SELFTEST_ARTIFACT_ROOT={json.dumps(artifact_root)}')
 PY
 }
 
-verify_whatsapp_run_context_json() {
+inspect_whatsapp_run_context_json() {
   local context_path="$1"
-  python3 - <<'PY' "$context_path"
+  local report_path="$2"
+  python3 - <<'PY' "$context_path" "$report_path"
 import json
 import re
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 context_path = Path(sys.argv[1])
-if not context_path.is_file():
-    raise SystemExit(f"missing WhatsApp context file: {context_path}")
-
-context = json.loads(context_path.read_text(encoding="utf-8"))
-kind = context.get("kind")
+report_path = Path(sys.argv[2])
+checked_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 valid_kinds = {
     "whatsapp-status",
     "conversation-turn2",
@@ -251,38 +250,105 @@ valid_kinds = {
     "resume-turn2",
     "resume-failure-recovery",
 }
-if kind not in valid_kinds:
-    raise SystemExit(f"unsupported WhatsApp context kind {kind!r} in {context_path}")
 
+context = {}
+kind = None
+checks = []
 errors = []
+reason_codes = []
+summary_payload = None
+
+def add_check(field, ok, code, expected=None, actual=None, message=None):
+    status = "ok" if ok else "error"
+    check = {
+        "field": field,
+        "status": status,
+        "code": code,
+        "expected": expected,
+        "actual": actual,
+        "message": message or code,
+    }
+    checks.append(check)
+    if not ok:
+        errors.append(check["message"])
+        if code not in reason_codes:
+            reason_codes.append(code)
+
+if not context_path.is_file():
+    add_check(
+        "contextPath",
+        False,
+        "context_missing",
+        "existing JSON file",
+        str(context_path),
+        f"missing WhatsApp context file: {context_path}",
+    )
+else:
+    try:
+        context = json.loads(context_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        add_check(
+            "contextPath",
+            False,
+            "context_json_invalid",
+            "valid JSON object",
+            str(context_path),
+            f"invalid WhatsApp context JSON {context_path}: {exc}",
+        )
+        context = {}
+
+kind = context.get("kind")
+if kind not in valid_kinds:
+    add_check(
+        "kind",
+        False,
+        "kind_invalid",
+        f"one of {sorted(valid_kinds)!r}",
+        kind,
+        f"unsupported WhatsApp context kind {kind!r} in {context_path}",
+    )
+else:
+    add_check("kind", True, "kind_ok", f"one of {sorted(valid_kinds)!r}", kind, f"context kind {kind!r} accepted")
 
 def require_abs_path(key, must_exist=True, allow_parent=False):
     value = context.get(key)
     if not value:
-        errors.append(f"{key} missing")
+        add_check(key, False, f"{key}_missing", "absolute path", value, f"{key} missing")
         return None
     path = Path(value)
     if not path.is_absolute():
-        errors.append(f"{key} not absolute: {value!r}")
+        add_check(key, False, f"{key}_not_absolute", "absolute path", value, f"{key} not absolute: {value!r}")
         return None
     if must_exist and not path.exists():
-        errors.append(f"{key} missing on disk: {value!r}")
+        add_check(key, False, f"{key}_missing_on_disk", "existing absolute path", value, f"{key} missing on disk: {value!r}")
+        return path
     if allow_parent and not path.parent.exists():
-        errors.append(f"{key} parent missing: {str(path.parent)!r}")
+        add_check(
+            key,
+            False,
+            f"{key}_parent_missing",
+            "existing parent directory",
+            str(path.parent),
+            f"{key} parent missing: {str(path.parent)!r}",
+        )
+        return path
+    add_check(key, True, f"{key}_ok", "absolute path", value, f"{key} path accepted")
     return path
 
 def require_regex(key, pattern):
     value = context.get(key) or ""
-    if not re.fullmatch(pattern, value):
-        errors.append(f"{key} invalid: {value!r}")
+    ok = bool(re.fullmatch(pattern, value))
+    add_check(key, ok, f"{key}_invalid", pattern, value, f"{key} invalid: {value!r}" if not ok else f"{key} accepted")
     return value
 
 def require_nonempty(key):
     value = context.get(key)
     if not isinstance(value, str) or not value.strip():
-        errors.append(f"{key} missing")
+        add_check(key, False, f"{key}_missing", "non-empty string", value, f"{key} missing")
         return ""
-    return value.strip()
+    value = value.strip()
+    add_check(key, True, f"{key}_ok", "non-empty string", value, f"{key} accepted")
+    return value
 
 session_key = context.get("sessionKey")
 if session_key is not None:
@@ -300,21 +366,53 @@ whatsapp_token = require_regex("whatsappToken", r"WA_SELFTEST_\d+")
 manager_session_id = require_nonempty("managerSessionId")
 
 if summary_snapshot_path and summary_snapshot_path.is_file():
-    summary_payload = json.loads(summary_snapshot_path.read_text(encoding="utf-8"))
-    if summary_payload.get("status") != "passed":
-        errors.append(f"summarySnapshotPath status={summary_payload.get('status')!r}")
-    if summary_payload.get("mode") != "live":
-        errors.append(f"summarySnapshotPath mode={summary_payload.get('mode')!r}")
-    if summary_payload.get("whatsappToken") != whatsapp_token:
-        errors.append(
-            "summarySnapshotPath whatsappToken mismatch: "
-            f"{summary_payload.get('whatsappToken')!r} != {whatsapp_token!r}"
+    try:
+        summary_payload = json.loads(summary_snapshot_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        add_check(
+            "summarySnapshotPath",
+            False,
+            "summary_snapshot_json_invalid",
+            "valid JSON object",
+            str(summary_snapshot_path),
+            f"summarySnapshotPath invalid JSON {summary_snapshot_path}: {exc}",
         )
-    if summary_payload.get("managerSessionId") != manager_session_id:
-        errors.append(
-            "summarySnapshotPath managerSessionId mismatch: "
-            f"{summary_payload.get('managerSessionId')!r} != {manager_session_id!r}"
-        )
+        summary_payload = None
+if summary_payload is not None:
+    add_check(
+        "summarySnapshotPath.status",
+        summary_payload.get("status") == "passed",
+        "summary_status_mismatch",
+        "passed",
+        summary_payload.get("status"),
+        f"summarySnapshotPath status={summary_payload.get('status')!r}",
+    )
+    add_check(
+        "summarySnapshotPath.mode",
+        summary_payload.get("mode") == "live",
+        "summary_mode_mismatch",
+        "live",
+        summary_payload.get("mode"),
+        f"summarySnapshotPath mode={summary_payload.get('mode')!r}",
+    )
+    add_check(
+        "whatsappToken",
+        summary_payload.get("whatsappToken") == whatsapp_token,
+        "summary_whatsapp_token_mismatch",
+        summary_payload.get("whatsappToken"),
+        whatsapp_token,
+        "summarySnapshotPath whatsappToken mismatch: "
+        f"{summary_payload.get('whatsappToken')!r} != {whatsapp_token!r}",
+    )
+    add_check(
+        "managerSessionId",
+        summary_payload.get("managerSessionId") == manager_session_id,
+        "summary_manager_session_mismatch",
+        summary_payload.get("managerSessionId"),
+        manager_session_id,
+        "summarySnapshotPath managerSessionId mismatch: "
+        f"{summary_payload.get('managerSessionId')!r} != {manager_session_id!r}",
+    )
 
 if kind == "whatsapp-status":
     require_abs_path("statusPath", must_exist=False, allow_parent=True)
@@ -345,12 +443,41 @@ if kind == "resume-failure-recovery":
     require_abs_path("artifactPath", must_exist=False, allow_parent=True)
     require_abs_path("conflictNotePath")
 
-if errors:
-    raise SystemExit(
-        "invalid WhatsApp run context "
-        f"{context_path}: {', '.join(errors)}"
-    )
+report = {
+    "summaryVersion": 1,
+    "checkedAt": checked_at,
+    "status": "ok" if not errors else "mismatch",
+    "fallbackRequired": bool(errors),
+    "contextPath": str(context_path),
+    "reportPath": str(report_path),
+    "kind": kind,
+    "reasonCodes": reason_codes,
+    "reasonSummary": "all consistency checks passed" if not errors else "; ".join(errors),
+    "checks": checks,
+    "summarySnapshot": {
+        "path": str(summary_snapshot_path) if summary_snapshot_path else None,
+        "status": summary_payload.get("status") if isinstance(summary_payload, dict) else None,
+        "mode": summary_payload.get("mode") if isinstance(summary_payload, dict) else None,
+        "whatsappToken": summary_payload.get("whatsappToken") if isinstance(summary_payload, dict) else None,
+        "managerSessionId": summary_payload.get("managerSessionId") if isinstance(summary_payload, dict) else None,
+    },
+}
+report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+
+print(f'WHATSAPP_CONTEXT_OK={json.dumps("1" if not errors else "0")}')
+print(f'WHATSAPP_CONTEXT_STATUS={json.dumps(report["status"])}')
+print(f'WHATSAPP_CONTEXT_KIND={json.dumps(kind or "")}')
+print(f'WHATSAPP_CONTEXT_REASON_CODES={json.dumps(",".join(reason_codes))}')
+print(f'WHATSAPP_CONTEXT_REASON_SUMMARY={json.dumps(report["reasonSummary"])}')
+print(f'WHATSAPP_CONTEXT_REPORT_PATH={json.dumps(str(report_path))}')
 PY
+}
+
+verify_whatsapp_run_context_json() {
+  local context_path="$1"
+  local report_path="${2:-$(mktemp "${TMPDIR:-/tmp}/openclaw-whatsapp-context.XXXXXX.json")}"
+  eval "$(inspect_whatsapp_run_context_json "$context_path" "$report_path")"
+  [[ "${WHATSAPP_CONTEXT_OK:-0}" == "1" ]]
 }
 
 apply_whatsapp_run_context_fault() {

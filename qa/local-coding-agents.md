@@ -335,6 +335,7 @@ command, so `claw-code-local summary` is not a stable probe.
 - the run keeps persistent artifacts and a machine-readable summary
 - the run first confirms or refreshes a fresh enough live selftest baseline
 - the status proof uses a run-specific copied summary file, so the live check cannot pass purely from remembered prior state
+- the run writes a consistency report for the status context, so the summary records whether token/session binding passed cleanly before the user-facing answer was sent
 
 ## What the Intelligence Loop Verifies
 
@@ -361,6 +362,7 @@ command, so `claw-code-local summary` is not a stable probe.
 - the resume eval still passes when its turn-2 context snapshot is deliberately mismatched
 - the resume turn switches to `sessions_history` instead of trusting the broken resume snapshot
 - the conversation and resume fallback paths still share one verified live WhatsApp token and manager session id from the same baseline
+- the mismatch reason is written into step-level consistency reports, not only implied by the fallback mode
 
 ## What the Recovery Smoke Verifies
 

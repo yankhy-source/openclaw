@@ -20,6 +20,7 @@ EVAL_ROOT=""
 TURN1_JSON=""
 TURN2_JSON=""
 TURN2_CONTEXT_PATH=""
+TURN2_CONTEXT_REPORT_PATH=""
 SELF_E164=""
 TURN1_TEXT=""
 TURN2_TEXT=""
@@ -29,6 +30,9 @@ VERIFIED_WHATSAPP_TOKEN=""
 VERIFIED_MANAGER_SESSION_ID=""
 VERIFIED_SELFTEST_ARTIFACT_ROOT=""
 TURN2_CONTEXT_FAULT="${OPENCLAW_HUMAN_WHATSAPP_RESUME_TURN2_CONTEXT_FAULT:-}"
+TURN2_CONTEXT_REPORT_STATUS=""
+TURN2_CONTEXT_REPORT_REASON_CODES=""
+TURN2_CONTEXT_REPORT_REASON_SUMMARY=""
 RESUME_MARKER="nebelstern-$(python3 - <<'PY'
 import uuid
 print(uuid.uuid4().hex[:10])
@@ -58,6 +62,7 @@ fi
 TURN1_JSON="$EVAL_ROOT/turn1-status.json"
 TURN2_JSON="$EVAL_ROOT/turn2-resume.json"
 TURN2_CONTEXT_PATH="$EVAL_ROOT/turn2-context.json"
+TURN2_CONTEXT_REPORT_PATH="$EVAL_ROOT/turn2-consistency.json"
 
 source "$SCRIPT_DIR/lib/openclaw-smoke-common.sh"
 
@@ -150,7 +155,11 @@ write_eval_summary() {
     "$VERIFIED_WHATSAPP_TOKEN" \
     "$VERIFIED_MANAGER_SESSION_ID" \
     "$TURN2_CONTEXT_MODE" \
-    "$TURN2_CONTEXT_FAULT"
+    "$TURN2_CONTEXT_FAULT" \
+    "$TURN2_CONTEXT_REPORT_PATH" \
+    "$TURN2_CONTEXT_REPORT_STATUS" \
+    "$TURN2_CONTEXT_REPORT_REASON_CODES" \
+    "$TURN2_CONTEXT_REPORT_REASON_SUMMARY"
 import json, pathlib, sys
 
 summary_paths = [pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])]
@@ -177,6 +186,10 @@ payload = {
     "verifiedManagerSessionId": sys.argv[21] or None,
     "turn2ContextMode": sys.argv[22] or None,
     "turn2ContextFault": sys.argv[23] or None,
+    "turn2ContextReportPath": sys.argv[24] or None,
+    "turn2ContextReportStatus": sys.argv[25] or None,
+    "turn2ContextReportReasonCodes": sys.argv[26] or None,
+    "turn2ContextReportReasonSummary": sys.argv[27] or None,
 }
 for summary_path in summary_paths:
     summary_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
@@ -295,7 +308,11 @@ path = pathlib.Path(context_path)
 path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 PY
 apply_whatsapp_run_context_fault "$TURN2_CONTEXT_PATH" "$TURN2_CONTEXT_FAULT"
-if ! verify_whatsapp_run_context_json "$TURN2_CONTEXT_PATH"; then
+eval "$(inspect_whatsapp_run_context_json "$TURN2_CONTEXT_PATH" "$TURN2_CONTEXT_REPORT_PATH")"
+TURN2_CONTEXT_REPORT_STATUS="$WHATSAPP_CONTEXT_STATUS"
+TURN2_CONTEXT_REPORT_REASON_CODES="$WHATSAPP_CONTEXT_REASON_CODES"
+TURN2_CONTEXT_REPORT_REASON_SUMMARY="$WHATSAPP_CONTEXT_REASON_SUMMARY"
+if [[ "$WHATSAPP_CONTEXT_OK" != "1" ]]; then
   TURN2_CONTEXT_MODE="history"
 fi
 
