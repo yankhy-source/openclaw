@@ -47,6 +47,10 @@ TURN2_CONTEXT_REPORT_REASON_CODES=""
 TURN3_CONTEXT_REPORT_REASON_CODES=""
 TURN2_CONTEXT_REPORT_REASON_SUMMARY=""
 TURN3_CONTEXT_REPORT_REASON_SUMMARY=""
+TURN2_CONTEXT_REPORT_DECISION_SOURCE=""
+TURN3_CONTEXT_REPORT_DECISION_SOURCE=""
+TURN2_CONTEXT_REPORT_CAUSE_LINE=""
+TURN3_CONTEXT_REPORT_CAUSE_LINE=""
 CONVERSATION_MARKER="nebelstern-$(python3 - <<'PY'
 import uuid
 print(uuid.uuid4().hex[:10])
@@ -259,7 +263,11 @@ write_eval_summary() {
     "$TURN3_CONTEXT_REPORT_PATH" \
     "$TURN3_CONTEXT_REPORT_STATUS" \
     "$TURN3_CONTEXT_REPORT_REASON_CODES" \
-    "$TURN3_CONTEXT_REPORT_REASON_SUMMARY"
+    "$TURN3_CONTEXT_REPORT_REASON_SUMMARY" \
+    "$TURN2_CONTEXT_REPORT_DECISION_SOURCE" \
+    "$TURN2_CONTEXT_REPORT_CAUSE_LINE" \
+    "$TURN3_CONTEXT_REPORT_DECISION_SOURCE" \
+    "$TURN3_CONTEXT_REPORT_CAUSE_LINE"
 import json, pathlib, sys
 
 summary_paths = [pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])]
@@ -300,6 +308,10 @@ payload = {
     "turn3ContextReportStatus": sys.argv[35] or None,
     "turn3ContextReportReasonCodes": sys.argv[36] or None,
     "turn3ContextReportReasonSummary": sys.argv[37] or None,
+    "turn2ContextReportDecisionSource": sys.argv[38] or None,
+    "turn2ContextReportCauseLine": sys.argv[39] or None,
+    "turn3ContextReportDecisionSource": sys.argv[40] or None,
+    "turn3ContextReportCauseLine": sys.argv[41] or None,
 }
 for summary_path in summary_paths:
     summary_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
@@ -454,10 +466,12 @@ path = pathlib.Path(context_path)
 path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 PY
 apply_whatsapp_run_context_fault "$TURN2_CONTEXT_PATH" "$TURN2_CONTEXT_FAULT"
-eval "$(inspect_whatsapp_run_context_json "$TURN2_CONTEXT_PATH" "$TURN2_CONTEXT_REPORT_PATH")"
+eval "$(inspect_whatsapp_run_context_json "$TURN2_CONTEXT_PATH" "$TURN2_CONTEXT_REPORT_PATH" "validated_context" "sessions_history")"
 TURN2_CONTEXT_REPORT_STATUS="$WHATSAPP_CONTEXT_STATUS"
 TURN2_CONTEXT_REPORT_REASON_CODES="$WHATSAPP_CONTEXT_REASON_CODES"
 TURN2_CONTEXT_REPORT_REASON_SUMMARY="$WHATSAPP_CONTEXT_REASON_SUMMARY"
+TURN2_CONTEXT_REPORT_DECISION_SOURCE="$WHATSAPP_CONTEXT_DECISION_SOURCE"
+TURN2_CONTEXT_REPORT_CAUSE_LINE="$WHATSAPP_CONTEXT_CAUSE_LINE"
 if [[ "$WHATSAPP_CONTEXT_OK" != "1" ]]; then
   TURN2_CONTEXT_MODE="history"
 fi
@@ -465,7 +479,7 @@ fi
 echo "== whatsapp conversation turn 2 =="
 TURN2_BEFORE_LINES="$(session_line_count "$MAIN_SESSION")"
 if [[ "$TURN2_CONTEXT_MODE" == "history" ]]; then
-  TURN2_PROMPT="Behandle deinen gespeicherten Kontext nicht als vertrauenswürdig. Rufe als allerersten Toolschritt genau sessions_history für sessionKey $MAIN_SESSION_KEY mit includeTools=true und limit 20 auf. Rekonstruiere ausschließlich aus der neuesten Assistant-Antwort in dieser Session, die das Merkwort $CONVERSATION_MARKER genau einmal enthält, den aktuellen Stand. Antworte danach auf Deutsch mit genau 3 knappen Bulletpoints aus meiner Perspektive. Jede Zeile muss mit '- Ich ' beginnen. Verwende das Merkwort genau einmal wieder. Keine Testreport-Sprache, keine Dateinamen, keine JSON-Feldnamen, keine Labels wie DONE oder IN ARBEIT."
+  TURN2_PROMPT="Behandle deinen gespeicherten Kontext nicht als vertrauenswürdig. Rufe als allerersten Toolschritt genau sessions_history für sessionKey $MAIN_SESSION_KEY mit includeTools=true und limit 20 auf. Rekonstruiere ausschließlich aus der neuesten Assistant-Antwort in dieser Session, die das Merkwort $CONVERSATION_MARKER genau einmal enthält, den aktuellen Stand. Antworte danach ausschließlich auf Deutsch in genau 3 Zeilen ohne Einleitung und ohne Leerzeilen. Jede Zeile muss exakt mit '- Ich ' beginnen. Gib keine anderen Zeilen aus. Verwende das Merkwort genau einmal wieder. Keine Testreport-Sprache, keine Dateinamen, keine JSON-Feldnamen, keine Labels wie DONE oder IN ARBEIT."
 else
   TURN2_PROMPT="Behalte den bisherigen Gesprächskontext. Antworte jetzt auf Deutsch mit genau 3 knappen Bulletpoints aus meiner Perspektive. Jede Zeile muss mit '- Ich ' beginnen. Verwende das Merkwort von eben genau einmal wieder, ohne dass ich es erneut nenne. Keine Testreport-Sprache, keine Dateinamen, keine JSON-Feldnamen, keine Labels wie DONE oder IN ARBEIT."
 fi
@@ -570,10 +584,12 @@ path = pathlib.Path(context_path)
 path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 PY
 apply_whatsapp_run_context_fault "$TURN3_CONTEXT_PATH" "$TURN3_CONTEXT_FAULT"
-eval "$(inspect_whatsapp_run_context_json "$TURN3_CONTEXT_PATH" "$TURN3_CONTEXT_REPORT_PATH")"
+eval "$(inspect_whatsapp_run_context_json "$TURN3_CONTEXT_PATH" "$TURN3_CONTEXT_REPORT_PATH" "validated_context" "sessions_history")"
 TURN3_CONTEXT_REPORT_STATUS="$WHATSAPP_CONTEXT_STATUS"
 TURN3_CONTEXT_REPORT_REASON_CODES="$WHATSAPP_CONTEXT_REASON_CODES"
 TURN3_CONTEXT_REPORT_REASON_SUMMARY="$WHATSAPP_CONTEXT_REASON_SUMMARY"
+TURN3_CONTEXT_REPORT_DECISION_SOURCE="$WHATSAPP_CONTEXT_DECISION_SOURCE"
+TURN3_CONTEXT_REPORT_CAUSE_LINE="$WHATSAPP_CONTEXT_CAUSE_LINE"
 if [[ "$WHATSAPP_CONTEXT_OK" != "1" ]]; then
   TURN3_CONTEXT_MODE="history"
 fi

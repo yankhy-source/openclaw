@@ -33,6 +33,8 @@ TURN2_CONTEXT_FAULT="${OPENCLAW_HUMAN_WHATSAPP_RESUME_TURN2_CONTEXT_FAULT:-}"
 TURN2_CONTEXT_REPORT_STATUS=""
 TURN2_CONTEXT_REPORT_REASON_CODES=""
 TURN2_CONTEXT_REPORT_REASON_SUMMARY=""
+TURN2_CONTEXT_REPORT_DECISION_SOURCE=""
+TURN2_CONTEXT_REPORT_CAUSE_LINE=""
 RESUME_MARKER="nebelstern-$(python3 - <<'PY'
 import uuid
 print(uuid.uuid4().hex[:10])
@@ -159,7 +161,9 @@ write_eval_summary() {
     "$TURN2_CONTEXT_REPORT_PATH" \
     "$TURN2_CONTEXT_REPORT_STATUS" \
     "$TURN2_CONTEXT_REPORT_REASON_CODES" \
-    "$TURN2_CONTEXT_REPORT_REASON_SUMMARY"
+    "$TURN2_CONTEXT_REPORT_REASON_SUMMARY" \
+    "$TURN2_CONTEXT_REPORT_DECISION_SOURCE" \
+    "$TURN2_CONTEXT_REPORT_CAUSE_LINE"
 import json, pathlib, sys
 
 summary_paths = [pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])]
@@ -190,6 +194,8 @@ payload = {
     "turn2ContextReportStatus": sys.argv[25] or None,
     "turn2ContextReportReasonCodes": sys.argv[26] or None,
     "turn2ContextReportReasonSummary": sys.argv[27] or None,
+    "turn2ContextReportDecisionSource": sys.argv[28] or None,
+    "turn2ContextReportCauseLine": sys.argv[29] or None,
 }
 for summary_path in summary_paths:
     summary_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
@@ -308,10 +314,12 @@ path = pathlib.Path(context_path)
 path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 PY
 apply_whatsapp_run_context_fault "$TURN2_CONTEXT_PATH" "$TURN2_CONTEXT_FAULT"
-eval "$(inspect_whatsapp_run_context_json "$TURN2_CONTEXT_PATH" "$TURN2_CONTEXT_REPORT_PATH")"
+eval "$(inspect_whatsapp_run_context_json "$TURN2_CONTEXT_PATH" "$TURN2_CONTEXT_REPORT_PATH" "validated_context" "sessions_history")"
 TURN2_CONTEXT_REPORT_STATUS="$WHATSAPP_CONTEXT_STATUS"
 TURN2_CONTEXT_REPORT_REASON_CODES="$WHATSAPP_CONTEXT_REASON_CODES"
 TURN2_CONTEXT_REPORT_REASON_SUMMARY="$WHATSAPP_CONTEXT_REASON_SUMMARY"
+TURN2_CONTEXT_REPORT_DECISION_SOURCE="$WHATSAPP_CONTEXT_DECISION_SOURCE"
+TURN2_CONTEXT_REPORT_CAUSE_LINE="$WHATSAPP_CONTEXT_CAUSE_LINE"
 if [[ "$WHATSAPP_CONTEXT_OK" != "1" ]]; then
   TURN2_CONTEXT_MODE="history"
 fi

@@ -233,7 +233,9 @@ PY
 inspect_whatsapp_run_context_json() {
   local context_path="$1"
   local report_path="$2"
-  python3 - <<'PY' "$context_path" "$report_path"
+  local success_source="${3:-validated_context}"
+  local fallback_source="${4:-sessions_history}"
+  python3 - <<'PY' "$context_path" "$report_path" "$success_source" "$fallback_source"
 import json
 import re
 import sys
@@ -242,6 +244,8 @@ from pathlib import Path
 
 context_path = Path(sys.argv[1])
 report_path = Path(sys.argv[2])
+success_source = sys.argv[3]
+fallback_source = sys.argv[4]
 checked_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 valid_kinds = {
     "whatsapp-status",
@@ -443,6 +447,27 @@ if kind == "resume-failure-recovery":
     require_abs_path("artifactPath", must_exist=False, allow_parent=True)
     require_abs_path("conflictNotePath")
 
+failed_checks = [check for check in checks if check["status"] == "error"]
+if failed_checks:
+    primary_check = failed_checks[0]
+    expected_summary = primary_check.get("expected") or "validierter Kontextwert"
+    actual_summary = primary_check.get("actual") or "fehlend"
+    deviation_summary = primary_check.get("message") or primary_check.get("code") or "Abweichung erkannt"
+    decision_source = fallback_source
+else:
+    primary_check = None
+    expected_summary = "alle relevanten Token-, Session- und Marker-Prüfungen stimmen mit dem verifizierten Snapshot überein"
+    actual_summary = "alle relevanten Konsistenzprüfungen wurden erfolgreich bestätigt"
+    deviation_summary = "keine"
+    decision_source = success_source
+
+cause_line = (
+    f"erwartet={expected_summary} | "
+    f"tatsaechlich={actual_summary} | "
+    f"abweichung={deviation_summary} | "
+    f"quelle={decision_source}"
+)
+
 report = {
     "summaryVersion": 1,
     "checkedAt": checked_at,
@@ -453,6 +478,12 @@ report = {
     "kind": kind,
     "reasonCodes": reason_codes,
     "reasonSummary": "all consistency checks passed" if not errors else "; ".join(errors),
+    "decisionSource": decision_source,
+    "expectedSummary": expected_summary,
+    "actualSummary": actual_summary,
+    "deviationSummary": deviation_summary,
+    "causeLine": cause_line,
+    "primaryCheck": primary_check,
     "checks": checks,
     "summarySnapshot": {
         "path": str(summary_snapshot_path) if summary_snapshot_path else None,
@@ -469,6 +500,8 @@ print(f'WHATSAPP_CONTEXT_STATUS={json.dumps(report["status"])}')
 print(f'WHATSAPP_CONTEXT_KIND={json.dumps(kind or "")}')
 print(f'WHATSAPP_CONTEXT_REASON_CODES={json.dumps(",".join(reason_codes))}')
 print(f'WHATSAPP_CONTEXT_REASON_SUMMARY={json.dumps(report["reasonSummary"])}')
+print(f'WHATSAPP_CONTEXT_DECISION_SOURCE={json.dumps(report["decisionSource"])}')
+print(f'WHATSAPP_CONTEXT_CAUSE_LINE={json.dumps(report["causeLine"])}')
 print(f'WHATSAPP_CONTEXT_REPORT_PATH={json.dumps(str(report_path))}')
 PY
 }
@@ -476,7 +509,9 @@ PY
 verify_whatsapp_run_context_json() {
   local context_path="$1"
   local report_path="${2:-$(mktemp "${TMPDIR:-/tmp}/openclaw-whatsapp-context.XXXXXX.json")}"
-  eval "$(inspect_whatsapp_run_context_json "$context_path" "$report_path")"
+  local success_source="${3:-validated_context}"
+  local fallback_source="${4:-sessions_history}"
+  eval "$(inspect_whatsapp_run_context_json "$context_path" "$report_path" "$success_source" "$fallback_source")"
   [[ "${WHATSAPP_CONTEXT_OK:-0}" == "1" ]]
 }
 

@@ -29,6 +29,8 @@ VERIFIED_SELFTEST_ARTIFACT_ROOT=""
 STATUS_CONTEXT_REPORT_STATUS=""
 STATUS_CONTEXT_REPORT_REASON_CODES=""
 STATUS_CONTEXT_REPORT_REASON_SUMMARY=""
+STATUS_CONTEXT_REPORT_DECISION_SOURCE=""
+STATUS_CONTEXT_REPORT_CAUSE_LINE=""
 
 if [[ -d "$NODE22_BIN" ]]; then
   PATH="$NODE22_BIN:$PATH"
@@ -95,7 +97,9 @@ write_eval_summary() {
     "$STATUS_CONTEXT_REPORT_PATH" \
     "$STATUS_CONTEXT_REPORT_STATUS" \
     "$STATUS_CONTEXT_REPORT_REASON_CODES" \
-    "$STATUS_CONTEXT_REPORT_REASON_SUMMARY"
+    "$STATUS_CONTEXT_REPORT_REASON_SUMMARY" \
+    "$STATUS_CONTEXT_REPORT_DECISION_SOURCE" \
+    "$STATUS_CONTEXT_REPORT_CAUSE_LINE"
 import json, pathlib, sys
 
 summary_paths = [pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])]
@@ -119,6 +123,8 @@ payload = {
     "statusContextReportStatus": sys.argv[18] or None,
     "statusContextReportReasonCodes": sys.argv[19] or None,
     "statusContextReportReasonSummary": sys.argv[20] or None,
+    "statusContextReportDecisionSource": sys.argv[21] or None,
+    "statusContextReportCauseLine": sys.argv[22] or None,
 }
 for summary_path in summary_paths:
     summary_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
@@ -185,10 +191,12 @@ payload = {
 path = pathlib.Path(context_path)
 path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 PY
-eval "$(inspect_whatsapp_run_context_json "$STATUS_CONTEXT_PATH" "$STATUS_CONTEXT_REPORT_PATH")"
+eval "$(inspect_whatsapp_run_context_json "$STATUS_CONTEXT_PATH" "$STATUS_CONTEXT_REPORT_PATH" "validated_snapshot" "abort_run")"
 STATUS_CONTEXT_REPORT_STATUS="$WHATSAPP_CONTEXT_STATUS"
 STATUS_CONTEXT_REPORT_REASON_CODES="$WHATSAPP_CONTEXT_REASON_CODES"
 STATUS_CONTEXT_REPORT_REASON_SUMMARY="$WHATSAPP_CONTEXT_REASON_SUMMARY"
+STATUS_CONTEXT_REPORT_DECISION_SOURCE="$WHATSAPP_CONTEXT_DECISION_SOURCE"
+STATUS_CONTEXT_REPORT_CAUSE_LINE="$WHATSAPP_CONTEXT_CAUSE_LINE"
 if [[ "$WHATSAPP_CONTEXT_OK" != "1" ]]; then
   echo "status context consistency failed: $STATUS_CONTEXT_REPORT_REASON_SUMMARY" >&2
   exit 1

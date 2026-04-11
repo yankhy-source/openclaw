@@ -45,6 +45,8 @@ VERIFIED_SELFTEST_ARTIFACT_ROOT=""
 RECOVERY_CONTEXT_REPORT_STATUS=""
 RECOVERY_CONTEXT_REPORT_REASON_CODES=""
 RECOVERY_CONTEXT_REPORT_REASON_SUMMARY=""
+RECOVERY_CONTEXT_REPORT_DECISION_SOURCE=""
+RECOVERY_CONTEXT_REPORT_CAUSE_LINE=""
 RESUME_FAILURE_MARKER="nebelstern-$(python3 - <<'PY'
 import uuid
 print(uuid.uuid4().hex[:10])
@@ -456,7 +458,9 @@ write_eval_summary() {
     "$RECOVERY_CONTEXT_REPORT_PATH" \
     "$RECOVERY_CONTEXT_REPORT_STATUS" \
     "$RECOVERY_CONTEXT_REPORT_REASON_CODES" \
-    "$RECOVERY_CONTEXT_REPORT_REASON_SUMMARY"
+    "$RECOVERY_CONTEXT_REPORT_REASON_SUMMARY" \
+    "$RECOVERY_CONTEXT_REPORT_DECISION_SOURCE" \
+    "$RECOVERY_CONTEXT_REPORT_CAUSE_LINE"
 import json, pathlib, sys
 
 summary_paths = [pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])]
@@ -505,6 +509,8 @@ payload = {
     "recoveryContextReportStatus": sys.argv[43] or None,
     "recoveryContextReportReasonCodes": sys.argv[44] or None,
     "recoveryContextReportReasonSummary": sys.argv[45] or None,
+    "recoveryContextReportDecisionSource": sys.argv[46] or None,
+    "recoveryContextReportCauseLine": sys.argv[47] or None,
 }
 for summary_path in summary_paths:
     summary_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
@@ -716,10 +722,12 @@ payload = {
 path = pathlib.Path(context_path)
 path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 PY
-eval "$(inspect_whatsapp_run_context_json "$RECOVERY_CONTEXT_PATH" "$RECOVERY_CONTEXT_REPORT_PATH")"
+eval "$(inspect_whatsapp_run_context_json "$RECOVERY_CONTEXT_PATH" "$RECOVERY_CONTEXT_REPORT_PATH" "validated_recovery_context" "sessions_history")"
 RECOVERY_CONTEXT_REPORT_STATUS="$WHATSAPP_CONTEXT_STATUS"
 RECOVERY_CONTEXT_REPORT_REASON_CODES="$WHATSAPP_CONTEXT_REASON_CODES"
 RECOVERY_CONTEXT_REPORT_REASON_SUMMARY="$WHATSAPP_CONTEXT_REASON_SUMMARY"
+RECOVERY_CONTEXT_REPORT_DECISION_SOURCE="$WHATSAPP_CONTEXT_DECISION_SOURCE"
+RECOVERY_CONTEXT_REPORT_CAUSE_LINE="$WHATSAPP_CONTEXT_CAUSE_LINE"
 if [[ "$WHATSAPP_CONTEXT_OK" != "1" ]]; then
   RECOVERY_CONTEXT_MODE="history_only_unverified"
 fi
