@@ -10,7 +10,14 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR / "lib"))
 
-from local_agent_run_history import age_seconds, load_json, load_run_summaries, summarize_window
+from local_agent_run_history import (
+    age_seconds,
+    latest_problem,
+    load_json,
+    load_run_summaries,
+    selftest_provider_blocker,
+    summarize_window,
+)
 
 
 def build_result(repo_root: Path, window: int) -> dict:
@@ -36,6 +43,18 @@ def build_result(repo_root: Path, window: int) -> dict:
         )
     )
     selftest_summary_path = Path(os.environ.get("OPENCLAW_SELFTEST_SUMMARY_PATH", repo_root / ".local-agent-last-selftest.json"))
+    whatsapp_transport_summary_path = Path(
+        os.environ.get(
+            "OPENCLAW_WHATSAPP_TRANSPORT_SMOKE_SUMMARY_PATH",
+            repo_root / ".local-agent-last-whatsapp-transport-smoke.json",
+        )
+    )
+    qwen_sessions_probe_summary_path = Path(
+        os.environ.get(
+            "OPENCLAW_QWEN_SESSIONS_PROBE_SUMMARY_PATH",
+            repo_root / ".local-agent-last-qwen-sessions-probe.json",
+        )
+    )
 
     intelligence_runs, intelligence_skipped = load_run_summaries(intelligence_base, "intelligence")
     recovery_runs, recovery_skipped = load_run_summaries(recovery_base, "recovery")
@@ -53,6 +72,9 @@ def build_result(repo_root: Path, window: int) -> dict:
         "human_whatsapp_resume_failure",
     )
     selftest = load_json(selftest_summary_path) if selftest_summary_path.exists() else None
+    selftest_blocker = selftest_provider_blocker(selftest)
+    whatsapp_transport = load_json(whatsapp_transport_summary_path) if whatsapp_transport_summary_path.exists() else None
+    qwen_sessions_probe = load_json(qwen_sessions_probe_summary_path) if qwen_sessions_probe_summary_path.exists() else None
 
     intelligence = summarize_window(intelligence_runs, window, intelligence_skipped)
     recovery = summarize_window(recovery_runs, window, recovery_skipped)
@@ -75,44 +97,52 @@ def build_result(repo_root: Path, window: int) -> dict:
 
     problems: list[str] = []
     warnings: list[str] = []
-    if not selftest or selftest.get("status") != "passed" or selftest.get("mode") != "live":
+    if not selftest:
         problems.append("latest selftest is not passed/live")
+    elif selftest.get("status") == "blocked":
+        problems.append("latest selftest blocked")
+    elif selftest.get("status") != "passed" or selftest.get("mode") != "live":
+        problems.append("latest selftest is not passed/live")
+    if not whatsapp_transport:
+        problems.append("latest whatsapp transport smoke missing")
+    elif whatsapp_transport.get("status") != "passed":
+        problems.append(latest_problem("whatsapp transport smoke", whatsapp_transport))
     if intelligence["latest"] is None:
         problems.append("no intelligence-loop history")
     elif intelligence["latest"].get("status") != "passed":
-        problems.append("latest intelligence loop failed")
+        problems.append(latest_problem("intelligence loop", intelligence["latest"]))
     if recovery["latest"] is None:
         problems.append("no recovery-smoke history")
     elif recovery["latest"].get("status") != "passed":
-        problems.append("latest recovery smoke failed")
+        problems.append(latest_problem("recovery smoke", recovery["latest"]))
     if human_whatsapp["latest"] is None:
         problems.append("no human-whatsapp history")
     elif human_whatsapp["latest"].get("status") != "passed":
-        problems.append("latest human whatsapp eval failed")
+        problems.append(latest_problem("human whatsapp eval", human_whatsapp["latest"]))
     if human_whatsapp_conversation["latest"] is None:
         problems.append("no human-whatsapp-conversation history")
     elif human_whatsapp_conversation["latest"].get("status") != "passed":
-        problems.append("latest human whatsapp conversation eval failed")
+        problems.append(latest_problem("human whatsapp conversation eval", human_whatsapp_conversation["latest"]))
     if human_whatsapp_resume["latest"] is None:
         problems.append("no human-whatsapp-resume history")
     elif human_whatsapp_resume["latest"].get("status") != "passed":
-        problems.append("latest human whatsapp resume eval failed")
+        problems.append(latest_problem("human whatsapp resume eval", human_whatsapp_resume["latest"]))
     if human_whatsapp_resume_failure["latest"] is None:
         problems.append("no human-whatsapp-resume-failure history")
     elif human_whatsapp_resume_failure["latest"].get("status") != "passed":
-        problems.append("latest human whatsapp resume-failure eval failed")
+        problems.append(latest_problem("human whatsapp resume-failure eval", human_whatsapp_resume_failure["latest"]))
     if intelligence["failCount"] > 0:
-        warnings.append("recent intelligence-loop history contains failures")
+        warnings.append("recent intelligence-loop history contains non-passed runs")
     if recovery["failCount"] > 0:
-        warnings.append("recent recovery-smoke history contains failures")
+        warnings.append("recent recovery-smoke history contains non-passed runs")
     if human_whatsapp["failCount"] > 0:
-        warnings.append("recent human-whatsapp history contains failures")
+        warnings.append("recent human-whatsapp history contains non-passed runs")
     if human_whatsapp_conversation["failCount"] > 0:
-        warnings.append("recent human-whatsapp-conversation history contains failures")
+        warnings.append("recent human-whatsapp-conversation history contains non-passed runs")
     if human_whatsapp_resume["failCount"] > 0:
-        warnings.append("recent human-whatsapp-resume history contains failures")
+        warnings.append("recent human-whatsapp-resume history contains non-passed runs")
     if human_whatsapp_resume_failure["failCount"] > 0:
-        warnings.append("recent human-whatsapp-resume-failure history contains failures")
+        warnings.append("recent human-whatsapp-resume-failure history contains non-passed runs")
 
     return {
         "summaryVersion": 1,
@@ -127,6 +157,23 @@ def build_result(repo_root: Path, window: int) -> dict:
             "finishedAt": selftest.get("finishedAt") if selftest else None,
             "ageSeconds": age_seconds(selftest.get("finishedAt")) if selftest else None,
             "whatsappToken": selftest.get("whatsappToken") if selftest else None,
+            "blocker": selftest_blocker,
+        },
+        "whatsappTransport": {
+            "status": whatsapp_transport.get("status") if whatsapp_transport else None,
+            "finishedAt": whatsapp_transport.get("finishedAt") if whatsapp_transport else None,
+            "ageSeconds": age_seconds(whatsapp_transport.get("finishedAt")) if whatsapp_transport else None,
+            "token": whatsapp_transport.get("token") if whatsapp_transport else None,
+            "provider": whatsapp_transport.get("provider") if whatsapp_transport else None,
+            "model": whatsapp_transport.get("model") if whatsapp_transport else None,
+        },
+        "qwenSessionsProbe": {
+            "status": qwen_sessions_probe.get("status") if qwen_sessions_probe else None,
+            "finishedAt": qwen_sessions_probe.get("finishedAt") if qwen_sessions_probe else None,
+            "ageSeconds": age_seconds(qwen_sessions_probe.get("finishedAt")) if qwen_sessions_probe else None,
+            "provider": qwen_sessions_probe.get("provider") if qwen_sessions_probe else None,
+            "model": qwen_sessions_probe.get("model") if qwen_sessions_probe else None,
+            "reason": qwen_sessions_probe.get("reason") if qwen_sessions_probe else None,
         },
         "intelligence": intelligence,
         "recovery": recovery,
@@ -164,13 +211,14 @@ def main() -> int:
         human_whatsapp_resume_failure = result["humanWhatsappResumeFailure"]
         print(
             "trend status={status} window={window} selftest={selftest_status}/{selftest_mode} "
-            "intelligenceLatest={intelligence_latest} recoveryLatest={recovery_latest} "
+            "whatsappTransport={whatsapp_transport_status} intelligenceLatest={intelligence_latest} recoveryLatest={recovery_latest} "
             "humanWhatsappLatest={human_latest} humanConversationLatest={human_conversation_latest} "
             "humanResumeLatest={human_resume_latest} humanResumeFailureLatest={human_resume_failure_latest}".format(
                 status=result["status"],
                 window=result["window"],
                 selftest_status=result["selftest"]["status"],
                 selftest_mode=result["selftest"]["mode"],
+                whatsapp_transport_status=result["whatsappTransport"]["status"],
                 intelligence_latest=(intelligence["latest"] or {}).get("status"),
                 recovery_latest=(recovery["latest"] or {}).get("status"),
                 human_latest=(human_whatsapp["latest"] or {}).get("status"),
@@ -181,6 +229,29 @@ def main() -> int:
         )
         if result["selftest"]["whatsappToken"]:
             print(f"whatsappToken={result['selftest']['whatsappToken']}")
+        if result["selftest"]["blocker"]:
+            blocker = result["selftest"]["blocker"]
+            print(f"selftestBlocker={blocker['summary']}")
+            for cooldown in blocker.get("cooldowns") or []:
+                remaining_ms = cooldown.get("remainingMs")
+                if remaining_ms is not None:
+                    remaining_seconds = (int(remaining_ms) + 999) // 1000
+                    print(
+                        "selftestCooldown provider={provider} profile={profile} remainingSeconds={seconds}".format(
+                            provider=cooldown.get("provider"),
+                            profile=cooldown.get("profileId"),
+                            seconds=remaining_seconds,
+                        )
+                    )
+        if result["qwenSessionsProbe"]["status"]:
+            print(
+                "qwenSessionsProbe={status} provider={provider} model={model} reason={reason}".format(
+                    status=result["qwenSessionsProbe"]["status"],
+                    provider=result["qwenSessionsProbe"]["provider"],
+                    model=result["qwenSessionsProbe"]["model"],
+                    reason=result["qwenSessionsProbe"]["reason"],
+                )
+            )
         print(
             f"intelligence passCount={intelligence['passCount']} failCount={intelligence['failCount']} total={intelligence['count']} skipped={intelligence['skippedCount']}"
         )

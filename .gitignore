@@ -154,7 +154,17 @@ extensions/qa-lab/web/dist/
 .local-agent-last-selftest.json
 selftest-summary.json
 .local-agent-task-smoke.*/
+.local-whatsapp-transport-smoke.*/
+.local-agent-last-whatsapp-transport-smoke.json
 .local-main-orchestrator-smoke.*/
+.local-qwen-sessions-probe.*/
+.local-agent-last-qwen-sessions-probe.json
+.local-gemini-sessions-probe.*/
+.local-agent-last-gemini-sessions-probe.json
+.local-heretic-sessions-probe.*/
+.local-agent-last-heretic-sessions-probe.json
+.local-openai-sessions-probe.*/
+.local-agent-last-openai-sessions-probe.json
 .local-main-routing-smoke.*/
 .local-main-task-smoke.*/
 .local-human-eval.*/

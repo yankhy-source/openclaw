@@ -11,7 +11,7 @@ EVAL_SUMMARY_PATH="${OPENCLAW_HUMAN_WHATSAPP_RESUME_FAILURE_EVAL_SUMMARY_PATH:-$
 MAX_AGE_SECONDS="${OPENCLAW_SELFTEST_MAX_AGE_SECONDS:-21600}"
 BOOTSTRAP_SCRIPT="$SCRIPT_DIR/bootstrap-local-coding-agents.mjs"
 ENSURE_SCRIPT="$SCRIPT_DIR/local-coding-agents-ensure.sh"
-SOURCE_AGENT_ID="${OPENCLAW_HUMAN_WHATSAPP_RESUME_FAILURE_SOURCE_AGENT_ID:-main}"
+SOURCE_AGENT_ID="${OPENCLAW_HUMAN_WHATSAPP_RESUME_FAILURE_SOURCE_AGENT_ID:-oc-human-source}"
 RECOVERY_AGENT_ID="${OPENCLAW_HUMAN_WHATSAPP_RESUME_FAILURE_RECOVERY_AGENT_ID:-oc-human-recovery}"
 SUMMARY_SNAPSHOT_OVERRIDE="${OPENCLAW_HUMAN_WHATSAPP_RESUME_FAILURE_SUMMARY_SNAPSHOT_PATH:-}"
 SUMMARY_SNAPSHOT_PATH=""
@@ -20,8 +20,18 @@ SOURCE_TURN_PATH=""
 EVAL_ROOT=""
 TURN1_JSON=""
 TURN2_JSON=""
+TOOL_MODEL_PRECHECK_JSON=""
+TOOL_MODEL_PRECHECK_PATH=""
+TOOL_MODEL_PRECHECK_REL=""
 ARTIFACT_PATH=""
 ARTIFACT_REL=""
+CONFLICT_NOTE_PATH=""
+CONFLICT_NOTE_REL=""
+CONFLICT_NOTE_TEXT=""
+TOOL_MODEL_PRECHECK_TEXT=""
+TOOL_MODEL_PRECHECK_PROVIDER=""
+TOOL_MODEL_PRECHECK_MODEL=""
+TOOL_MODEL_BLOCKED_REASON=""
 SELF_E164=""
 TURN1_TEXT=""
 TURN2_TEXT=""
@@ -34,6 +44,21 @@ PY
 SOURCE_TAG="resume-failure-quelle-$(python3 - <<'PY'
 import uuid
 print(uuid.uuid4().hex[:8])
+PY
+)"
+CONFLICT_MARKER="nebelstern-falsch-$(python3 - <<'PY'
+import uuid
+print(uuid.uuid4().hex[:8])
+PY
+)"
+CONFLICT_TAG="resume-failure-falsch-$(python3 - <<'PY'
+import uuid
+print(uuid.uuid4().hex[:8])
+PY
+)"
+TOOL_MODEL_PRECHECK_TOKEN="toolmodell-$(python3 - <<'PY'
+import uuid
+print(uuid.uuid4().hex[:10])
 PY
 )"
 SOURCE_SESSION_KEY="agent:${SOURCE_AGENT_ID}:main"
@@ -60,8 +85,13 @@ else
 fi
 TURN1_JSON="$EVAL_ROOT/turn1-source.json"
 TURN2_JSON="$EVAL_ROOT/turn2-rebuild.json"
+TOOL_MODEL_PRECHECK_JSON="$EVAL_ROOT/tool-model-preflight.json"
+TOOL_MODEL_PRECHECK_PATH="$EVAL_ROOT/tool-model-preflight.txt"
+TOOL_MODEL_PRECHECK_REL="${TOOL_MODEL_PRECHECK_PATH#"$REPO_ROOT/"}"
 ARTIFACT_PATH="$EVAL_ROOT/recovery-note.md"
 ARTIFACT_REL="${ARTIFACT_PATH#"$REPO_ROOT/"}"
+CONFLICT_NOTE_PATH="$EVAL_ROOT/conflicting-note.md"
+CONFLICT_NOTE_REL="${CONFLICT_NOTE_PATH#"$REPO_ROOT/"}"
 
 source "$SCRIPT_DIR/lib/openclaw-smoke-common.sh"
 
@@ -118,6 +148,45 @@ if "✅ Subagent " in text:
     text = text.split("✅ Subagent ", 1)[0]
 print(text.strip())
 PY
+}
+
+extract_agent_meta_field() {
+  local json_path="$1"
+  local field="$2"
+  python3 - <<'PY' "$json_path" "$field"
+import json, sys
+from pathlib import Path
+
+json_path = Path(sys.argv[1])
+field = sys.argv[2]
+raw = json_path.read_text(encoding="utf-8")
+decoder = json.JSONDecoder()
+payload = None
+for index, char in enumerate(raw):
+    if char != "{":
+        continue
+    try:
+        candidate, _ = decoder.raw_decode(raw[index:])
+    except json.JSONDecodeError:
+        continue
+    if isinstance(candidate, dict) and "result" in candidate:
+        payload = candidate
+if payload is None:
+    raise SystemExit(1)
+meta = payload.get("result", {}).get("meta", {}).get("agentMeta", {})
+value = meta.get(field)
+if value is None:
+    raise SystemExit(1)
+print(value)
+PY
+}
+
+block_tool_model_precheck() {
+  TOOL_MODEL_BLOCKED_REASON="$1"
+  EVAL_STATUS="blocked"
+  EVAL_FAILED_COMMAND="$1"
+  printf 'tool model preflight blocked: %s\n' "$1" >&2
+  exit 2
 }
 
 wait_for_valid_artifact() {
@@ -193,21 +262,33 @@ PY
 assert_valid_artifact() {
   local artifact_path="$1"
   local marker="$2"
-  python3 - <<'PY' "$artifact_path" "$marker"
+  local source_tag="$3"
+  local conflict_marker="$4"
+  local conflict_tag="$5"
+  python3 - <<'PY' "$artifact_path" "$marker" "$source_tag" "$conflict_marker" "$conflict_tag"
 from pathlib import Path
 import sys
 
 artifact_path = Path(sys.argv[1])
 marker = sys.argv[2]
+source_tag = sys.argv[3]
+conflict_marker = sys.argv[4]
+conflict_tag = sys.argv[5]
 if not artifact_path.is_file():
     raise SystemExit(f"artifact was not created: {artifact_path}")
 text = artifact_path.read_text(encoding="utf-8")
-required = ["# Recovery Note", "## Rekonstruktion", "## Nächster Schritt"]
+required = ["# Recovery Note", "## Rekonstruktion", "## Konsistenzprüfung", "## Nächster Schritt"]
 missing = [item for item in required if item not in text]
 if missing:
     raise SystemExit(f"artifact missing headings {missing!r}: {text!r}")
 if text.count(marker) != 1:
     raise SystemExit(f"artifact must contain marker exactly once: {marker!r} in {text!r}")
+if text.count(source_tag) != 1:
+    raise SystemExit(f"artifact must contain source tag exactly once: {source_tag!r} in {text!r}")
+if conflict_marker in text or conflict_tag in text:
+    raise SystemExit(f"artifact leaked rejected conflict values: {text!r}")
+if not any(term in text.lower() for term in ["widerspruch", "verworfen", "history", "historie"]):
+    raise SystemExit(f"artifact must explain the conflict rejection: {text!r}")
 blocked = [
     ".local-agent-last-selftest.json",
     ".local-agent-last-human-whatsapp-resume-failure-eval.json",
@@ -219,6 +300,67 @@ blocked = [
 found = [item for item in blocked if item.lower() in text.lower()]
 if found:
     raise SystemExit(f"artifact contains internal wording {found!r}: {text!r}")
+PY
+}
+
+archive_agent_sessions_for_eval() {
+  local agent_id="$1"
+  local label="$2"
+  local session_dir="$STATE_DIR/agents/$agent_id/sessions"
+  local archive_dir="$EVAL_ROOT/archived-$label-sessions"
+  if [[ ! -d "$session_dir" ]]; then
+    mkdir -p "$session_dir"
+    return 0
+  fi
+
+  shopt -s nullglob
+  local files=("$session_dir"/*)
+  shopt -u nullglob
+  if ((${#files[@]} == 0)); then
+    return 0
+  fi
+
+  mkdir -p "$archive_dir"
+  mv "${files[@]}" "$archive_dir"/
+  mkdir -p "$session_dir"
+}
+
+session_tool_result_line_after_line() {
+  local session_file="$1"
+  local start_line="$2"
+  local tool_name="$3"
+  local content_substring="$4"
+  python3 - <<'PY' "$session_file" "$start_line" "$tool_name" "$content_substring"
+import json
+import sys
+from pathlib import Path
+
+session_file = Path(sys.argv[1])
+start_line = int(sys.argv[2])
+tool_name = sys.argv[3]
+content_substring = sys.argv[4]
+if not session_file.is_file():
+    raise SystemExit(1)
+with session_file.open("r", encoding="utf-8") as handle:
+    for line_number, raw_line in enumerate(handle, start=1):
+        if line_number <= start_line:
+            continue
+        try:
+            entry = json.loads(raw_line)
+        except json.JSONDecodeError:
+            continue
+        message = entry.get("message") or {}
+        if message.get("role") != "toolResult" or message.get("toolName") != tool_name:
+            continue
+        content = "".join(
+            part.get("text", "")
+            for part in message.get("content") or []
+            if isinstance(part, dict) and part.get("type") == "text"
+        )
+        if content_substring in content:
+            print(line_number)
+            raise SystemExit(0)
+raise SystemExit(1)
 PY
 }
 
@@ -263,6 +405,19 @@ write_eval_summary() {
     "$ARTIFACT_PATH" \
     "$ARTIFACT_REL" \
     "$ARTIFACT_TEXT" \
+    "$TOOL_MODEL_PRECHECK_JSON" \
+    "$TOOL_MODEL_PRECHECK_PATH" \
+    "$TOOL_MODEL_PRECHECK_REL" \
+    "$TOOL_MODEL_PRECHECK_TOKEN" \
+    "$TOOL_MODEL_PRECHECK_TEXT" \
+    "$TOOL_MODEL_PRECHECK_PROVIDER" \
+    "$TOOL_MODEL_PRECHECK_MODEL" \
+    "$TOOL_MODEL_BLOCKED_REASON" \
+    "$CONFLICT_NOTE_PATH" \
+    "$CONFLICT_NOTE_REL" \
+    "$CONFLICT_NOTE_TEXT" \
+    "$CONFLICT_MARKER" \
+    "$CONFLICT_TAG" \
     "$SELF_E164" \
     "$SOURCE_AGENT_ID" \
     "$RECOVERY_AGENT_ID"
@@ -291,9 +446,22 @@ payload = {
     "artifactPath": sys.argv[20] or None,
     "artifactRelativePath": sys.argv[21] or None,
     "artifactText": sys.argv[22] or None,
-    "selfE164": sys.argv[23] or None,
-    "sourceAgentId": sys.argv[24] or None,
-    "recoveryAgentId": sys.argv[25] or None,
+    "toolModelPrecheckPath": sys.argv[23] or None,
+    "toolModelPrecheckProbePath": sys.argv[24] or None,
+    "toolModelPrecheckProbeRelativePath": sys.argv[25] or None,
+    "toolModelPrecheckToken": sys.argv[26] or None,
+    "toolModelPrecheckText": sys.argv[27] or None,
+    "toolModelPrecheckProvider": sys.argv[28] or None,
+    "toolModelPrecheckModel": sys.argv[29] or None,
+    "toolModelBlockedReason": sys.argv[30] or None,
+    "conflictNotePath": sys.argv[31] or None,
+    "conflictNoteRelativePath": sys.argv[32] or None,
+    "conflictNoteText": sys.argv[33] or None,
+    "conflictMarker": sys.argv[34] or None,
+    "conflictTag": sys.argv[35] or None,
+    "selfE164": sys.argv[36] or None,
+    "sourceAgentId": sys.argv[37] or None,
+    "recoveryAgentId": sys.argv[38] or None,
 }
 for summary_path in summary_paths:
     summary_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
@@ -315,8 +483,35 @@ trap 'on_exit $?' EXIT
 echo "== bootstrap local coding agents =="
 node "$BOOTSTRAP_SCRIPT" >/dev/null
 
+archive_agent_sessions_for_eval "$SOURCE_AGENT_ID" "source"
+archive_agent_sessions_for_eval "$RECOVERY_AGENT_ID" "recovery"
+
 echo "== ensure fresh live selftest =="
+set +e
 bash "$ENSURE_SCRIPT" --live --max-age-seconds "$MAX_AGE_SECONDS" >/dev/null
+ENSURE_EXIT_CODE="$?"
+set -e
+if [[ "$ENSURE_EXIT_CODE" -ne 0 ]]; then
+  SELFTEST_STATUS="$(python3 - <<'PY' "$SUMMARY_PATH" || true
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+if not path.is_file():
+    raise SystemExit(1)
+payload = json.loads(path.read_text(encoding="utf-8"))
+print(payload.get("status") or "")
+PY
+)"
+  if [[ "$ENSURE_EXIT_CODE" -eq 2 || "$SELFTEST_STATUS" == "blocked" ]]; then
+    EVAL_STATUS="blocked"
+    EVAL_FAILED_COMMAND="fresh live selftest prerequisite blocked (${SELFTEST_STATUS:-unknown})"
+    exit 2
+  fi
+  EVAL_FAILED_COMMAND="fresh live selftest prerequisite failed (${SELFTEST_STATUS:-unknown})"
+  exit "$ENSURE_EXIT_CODE"
+fi
 
 if [[ ! -f "$SUMMARY_PATH" ]]; then
   echo "missing selftest summary at $SUMMARY_PATH" >&2
@@ -332,10 +527,67 @@ fi
 
 mkdir -p "$(dirname "$ARTIFACT_PATH")"
 printf 'before\n' >"$ARTIFACT_PATH"
+CONFLICT_NOTE_TEXT="$(python3 - <<'PY' "$CONFLICT_NOTE_PATH" "$CONFLICT_MARKER" "$CONFLICT_TAG"
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+marker = sys.argv[2]
+tag = sys.argv[3]
+text = (
+    "# Konflikt-Notiz\n\n"
+    "Diese absichtlich falsche Notiz behauptet einen anderen Lauf.\n\n"
+    f"Kennung: {tag}\n"
+    f"Merkwort: {marker}\n\n"
+    "Diese Werte sind nur eine negative Gegenprobe und dürfen nicht in die Antwort übernommen werden.\n"
+)
+path.write_text(text, encoding="utf-8")
+print(text)
+PY
+)"
 
 echo "== gateway health =="
 openclaw_ensure_gateway_healthy >/dev/null
 SELF_E164="$(openclaw_whatsapp_self_e164)"
+
+echo "== tool model preflight =="
+printf '%s\n' "$TOOL_MODEL_PRECHECK_TOKEN" >"$TOOL_MODEL_PRECHECK_PATH"
+RECOVERY_PREFLIGHT_SESSION="$(agent_main_session_jsonl "$RECOVERY_AGENT_ID")"
+if [[ -z "$RECOVERY_PREFLIGHT_SESSION" || ! -f "$RECOVERY_PREFLIGHT_SESSION" ]]; then
+  RECOVERY_PREFLIGHT_BEFORE_LINES=0
+else
+  RECOVERY_PREFLIGHT_BEFORE_LINES="$(session_line_count "$RECOVERY_PREFLIGHT_SESSION")"
+fi
+if ! run_openclaw_agent_json "$TOOL_MODEL_PRECHECK_JSON" \
+  --agent "$RECOVERY_AGENT_ID" \
+  --thinking medium \
+  --message "Preflight für einen toolkritischen Recovery-Test. Rufe sessions_history für sessionKey $SOURCE_SESSION_KEY mit includeTools=true und limit 1 auf. Lies danach exakt die Datei $TOOL_MODEL_PRECHECK_REL per read. Antworte exakt mit dem Dateiinhalt, eine Zeile, kein Zusatztext. Ohne beide Toolcalls darfst du nicht abschließen."; then
+  if [[ -f "$TOOL_MODEL_PRECHECK_JSON" ]]; then
+    TOOL_MODEL_PRECHECK_PROVIDER="$(extract_agent_meta_field "$TOOL_MODEL_PRECHECK_JSON" provider || true)"
+    TOOL_MODEL_PRECHECK_MODEL="$(extract_agent_meta_field "$TOOL_MODEL_PRECHECK_JSON" model || true)"
+  fi
+  block_tool_model_precheck "no text result from a tool-capable recovery model; current providers are unavailable or fell back to a non-tool runtime"
+fi
+if [[ -z "$RECOVERY_PREFLIGHT_SESSION" || ! -f "$RECOVERY_PREFLIGHT_SESSION" ]]; then
+  RECOVERY_PREFLIGHT_SESSION="$(wait_for_agent_main_session_jsonl "$RECOVERY_AGENT_ID" 40 1)"
+fi
+TOOL_MODEL_PRECHECK_TEXT="$(extract_result_text "$TOOL_MODEL_PRECHECK_JSON")"
+TOOL_MODEL_PRECHECK_PROVIDER="$(extract_agent_meta_field "$TOOL_MODEL_PRECHECK_JSON" provider || true)"
+TOOL_MODEL_PRECHECK_MODEL="$(extract_agent_meta_field "$TOOL_MODEL_PRECHECK_JSON" model || true)"
+if [[ "$TOOL_MODEL_PRECHECK_TEXT" != "$TOOL_MODEL_PRECHECK_TOKEN" ]]; then
+  block_tool_model_precheck "preflight returned unexpected text from ${TOOL_MODEL_PRECHECK_PROVIDER:-unknown}/${TOOL_MODEL_PRECHECK_MODEL:-unknown}"
+fi
+if ! session_pattern_line_after_line "$RECOVERY_PREFLIGHT_SESSION" "$RECOVERY_PREFLIGHT_BEFORE_LINES" '"name":"sessions_history"|"toolName":"sessions_history"' >/dev/null; then
+  block_tool_model_precheck "preflight completed without a sessions_history toolcall from ${TOOL_MODEL_PRECHECK_PROVIDER:-unknown}/${TOOL_MODEL_PRECHECK_MODEL:-unknown}"
+fi
+if ! session_pattern_line_after_line "$RECOVERY_PREFLIGHT_SESSION" "$RECOVERY_PREFLIGHT_BEFORE_LINES" '"name":"read"|"toolName":"read"' >/dev/null; then
+  block_tool_model_precheck "preflight completed without a read toolcall from ${TOOL_MODEL_PRECHECK_PROVIDER:-unknown}/${TOOL_MODEL_PRECHECK_MODEL:-unknown}"
+fi
+if [[ "$TOOL_MODEL_PRECHECK_PROVIDER" == "heretic-local" ]]; then
+  block_tool_model_precheck "preflight reached heretic-local; this eval requires a tool-reliable remote coding model"
+fi
+archive_agent_sessions_for_eval "$RECOVERY_AGENT_ID" "recovery-after-preflight"
+printf 'tool_model_provider=%s/%s\n' "$TOOL_MODEL_PRECHECK_PROVIDER" "$TOOL_MODEL_PRECHECK_MODEL"
 
 echo "== resume-failure source turn =="
 SOURCE_SESSION="$(agent_main_session_jsonl "$SOURCE_AGENT_ID")"
@@ -345,7 +597,7 @@ else
   SOURCE_BEFORE_LINES="$(session_line_count "$SOURCE_SESSION")"
 fi
 run_source_whatsapp_json "$TURN1_JSON" \
-  --message "Ich bin der Nutzer. Das ist die Resume-Failure-Quelle mit Kennung $SOURCE_TAG. Lies zuerst per read exakt $SOURCE_TURN_PATH. Antworte danach auf Deutsch in genau 2 kurzen Sätzen: Läuft mein lokaler Agent stabil und welches Merkwort nutzen wir jetzt? Verwende das Merkwort $RESUME_FAILURE_MARKER genau einmal. Keine Testreport-Sprache, keine Dateinamen, keine JSON-Feldnamen, keine Labels wie DONE oder IN ARBEIT."
+  --message "Ich bin der Nutzer. Das ist die Resume-Failure-Quelle mit Kennung $SOURCE_TAG. Antworte auf Deutsch in 2-3 kurzen Sätzen: bestätige, dass wir diesen Recovery-Kontext fortsetzen, und sag, welches Merkwort wir jetzt nutzen. Verwende das Merkwort $RESUME_FAILURE_MARKER genau einmal. Keine Testreport-Sprache, keine Dateinamen, keine JSON-Feldnamen, keine Labels wie DONE oder IN ARBEIT."
 if [[ -z "$SOURCE_SESSION" || ! -f "$SOURCE_SESSION" ]]; then
   SOURCE_SESSION="$(wait_for_agent_main_session_jsonl "$SOURCE_AGENT_ID" 40 1)"
 fi
@@ -357,8 +609,8 @@ text = sys.argv[1]
 marker = sys.argv[2]
 if "whatsapp" in text.lower():
     pass
-if not any(term in text.lower() for term in ["lokal", "agent"]):
-    raise SystemExit(f"turn 1 missing agent/local wording in {text!r}")
+if not any(term in text.lower() for term in ["recovery", "kontext", "fortsetzen", "weiter"]):
+    raise SystemExit(f"turn 1 missing recovery/context wording in {text!r}")
 if text.count(marker) != 1:
     raise SystemExit(f"turn 1 must contain marker exactly once: {marker!r} in {text!r}")
 blocked = ["DONE:", "IN ARBEIT:", ".local-agent-last-selftest.json", "failedStep", "stepsCompleted"]
@@ -366,12 +618,10 @@ found = [item for item in blocked if item.lower() in text.lower()]
 if found:
     raise SystemExit(f"turn 1 contains internal wording {found!r}: {text!r}")
 sentence_count = sum(text.count(mark) for mark in ".!?")
-if sentence_count != 2:
-    raise SystemExit(f"turn 1 expected exactly 2 sentences, got {sentence_count} in {text!r}")
+if sentence_count not in (2, 3):
+    raise SystemExit(f"turn 1 expected 2-3 short sentences, got {sentence_count} in {text!r}")
 PY
 printf '%s\n' "$TURN1_TEXT"
-wait_for_session_pattern_after_line "$SOURCE_SESSION" "$SOURCE_BEFORE_LINES" '"name":"read"|"toolName":"read"'
-wait_for_session_pattern_after_line "$SOURCE_SESSION" "$SOURCE_BEFORE_LINES" "$SOURCE_TURN_PATH"
 wait_for_session_pattern_after_line "$SOURCE_SESSION" "$SOURCE_BEFORE_LINES" "$SOURCE_TAG"
 
 echo "== restart gateway for failure-style break =="
@@ -387,18 +637,20 @@ else
   RECOVERY_BEFORE_LINES="$(session_line_count "$RECOVERY_SESSION")"
 fi
 run_recovery_whatsapp_json "$TURN2_JSON" \
-  --message "Ich komme in einer frischen Agent-Session nach einer Unterbrechung zurück. Dein eigener Chatkontext enthält das Merkwort nicht. Rufe als allerersten Toolschritt genau sessions_history für sessionKey $SOURCE_SESSION_KEY mit includeTools=true und limit 120 auf. Benutze nicht sessions_list. Rekonstruiere daraus den neuesten Lauf mit der Kennung $SOURCE_TAG und bestimme das genaue Merkwort plus den nächsten Schritt ausschließlich aus den Nachrichten in dieser History. Du brauchst dafür keine alten Dateien erneut zu öffnen. Wenn in der History ein Pfad außerhalb deines Workspace auftaucht, ignoriere ihn. Benutze kein process und keine langen Suchläufe über ~/.openclaw. Falls du exec nutzt, dann nur kurz und lokal im aktuellen Workspace. Überschreibe danach exakt die bereits existierende Datei $ARTIFACT_REL mit Markdown: '# Recovery Note', '## Rekonstruktion', '## Nächster Schritt'. Nutze das rekonstruierte Merkwort genau einmal im Dateiinhalt. Lies die geschriebene Datei danach per read zur Verifikation. Antworte mir danach auf Deutsch in genau 2 kurzen Sätzen: welches Merkwort wir benutzt haben und was ich als Nächstes tun sollte. Verwende das Merkwort genau einmal. Keine Dateipfade, keine Testreport-Sprache, keine JSON-Feldnamen, keine Labels wie DONE oder IN ARBEIT. Ohne sessions_history darfst du nicht abschließen."
+  --message "Ich komme in einer frischen Agent-Session nach einer Unterbrechung zurück. Dein eigener Chatkontext enthält das Merkwort nicht. Rufe als allerersten Toolschritt genau sessions_history für sessionKey $SOURCE_SESSION_KEY mit includeTools=true und limit 40 auf. Benutze nicht sessions_list. Rekonstruiere daraus ausschließlich die neueste User-Nachricht, die exakt die Kennung $SOURCE_TAG enthält, plus die unmittelbar folgende Assistant-Antwort. Verwende kein Merkwort aus älteren Kennungen oder älteren Läufen derselben Session. Bestimme daraus das genaue Merkwort plus den nächsten Schritt. Lies danach exakt die Konfliktdatei $CONFLICT_NOTE_REL. Diese Konfliktdatei ist absichtlich widersprüchlich und darf nur als negative Gegenprobe dienen. Wenn Konfliktdatei und History widersprechen, gewinnt immer sessions_history; verwerfe die Konfliktwerte vollständig. Du brauchst dafür keine alten Dateien erneut zu öffnen. Wenn in der History ein Pfad außerhalb deines Workspace auftaucht, ignoriere ihn. Benutze kein process und keine langen Suchläufe über ~/.openclaw. Falls du exec nutzt, dann nur kurz und lokal im aktuellen Workspace. Überschreibe danach exakt die bereits existierende Datei $ARTIFACT_REL mit Markdown: '# Recovery Note', '## Rekonstruktion', '## Konsistenzprüfung', '## Nächster Schritt'. Nutze das rekonstruierte Merkwort genau einmal im Dateiinhalt und die rekonstruierte Kennung $SOURCE_TAG genau einmal im Dateiinhalt. Erkläre in der Konsistenzprüfung kurz, dass die widersprüchliche Notiz verworfen wurde, ohne deren falsche Werte zu wiederholen. Lies die geschriebene Datei danach per read zur Verifikation. Antworte mir danach auf Deutsch in genau 2 kurzen Sätzen: welches Merkwort wir benutzt haben und was ich als Nächstes tun sollte. Verwende das Merkwort genau einmal. Wiederhole keine Konfliktwerte. Keine Dateipfade, keine Testreport-Sprache, keine JSON-Feldnamen, keine Labels wie DONE oder IN ARBEIT. Ohne sessions_history darfst du nicht abschließen."
 if [[ -z "$RECOVERY_SESSION" || ! -f "$RECOVERY_SESSION" ]]; then
   RECOVERY_SESSION="$(wait_for_agent_main_session_jsonl "$RECOVERY_AGENT_ID" 40 1)"
 fi
 TURN2_TEXT="$(extract_result_text "$TURN2_JSON")"
-python3 - <<'PY' "$TURN2_TEXT" "$RESUME_FAILURE_MARKER"
+python3 - <<'PY' "$TURN2_TEXT" "$RESUME_FAILURE_MARKER" "$CONFLICT_MARKER" "$CONFLICT_TAG"
 import sys
 
 text = sys.argv[1]
 marker = sys.argv[2]
 if text.count(marker) != 1:
     raise SystemExit(f"turn 2 must repeat marker exactly once: {marker!r} in {text!r}")
+if sys.argv[3] in text or sys.argv[4] in text:
+    raise SystemExit(f"turn 2 leaked rejected conflict values in {text!r}")
 if not any(term in text.lower() for term in ["schritt", "nächste", "nächstes", "tun"]):
     raise SystemExit(f"turn 2 missing next-step wording in {text!r}")
 blocked = ["DONE:", "IN ARBEIT:", ".local-agent-last-selftest.json", "failedStep", "stepsCompleted", "sessionKey", "toolCall"]
@@ -415,18 +667,20 @@ sleep 1
 assert_session_pattern_after_line "$RECOVERY_SESSION" "$RECOVERY_BEFORE_LINES" '"name":"sessions_history"|"toolName":"sessions_history"'
 assert_session_pattern_after_line "$RECOVERY_SESSION" "$RECOVERY_BEFORE_LINES" "$SOURCE_SESSION_KEY"
 assert_session_pattern_after_line "$RECOVERY_SESSION" "$RECOVERY_BEFORE_LINES" "$SOURCE_TAG"
+assert_session_read_result "$RECOVERY_SESSION" "$CONFLICT_NOTE_REL" "$CONFLICT_NOTE_TEXT" >/dev/null
 assert_session_pattern_after_line "$RECOVERY_SESSION" "$RECOVERY_BEFORE_LINES" "\"name\":\"apply_patch\"|\"name\":\"edit\"|\"name\":\"write\"|\"name\":\"exec\"|\"toolName\":\"apply_patch\"|\"toolName\":\"edit\"|\"toolName\":\"write\"|\"toolName\":\"exec\""
 assert_session_pattern_after_line "$RECOVERY_SESSION" "$RECOVERY_BEFORE_LINES" "$ARTIFACT_REL"
 assert_session_pattern_after_line "$RECOVERY_SESSION" "$RECOVERY_BEFORE_LINES" '"name":"read"|"toolName":"read"'
 
 HISTORY_LINE="$(session_pattern_line_after_line "$RECOVERY_SESSION" "$RECOVERY_BEFORE_LINES" '"name":"sessions_history"|"toolName":"sessions_history"')"
+CONFLICT_LINE="$(session_tool_result_line_after_line "$RECOVERY_SESSION" "$RECOVERY_BEFORE_LINES" "read" "$CONFLICT_MARKER")"
 WRITE_LINE="$(session_pattern_line_after_line "$RECOVERY_SESSION" "$RECOVERY_BEFORE_LINES" '"name":"apply_patch"|"name":"edit"|"name":"write"|"name":"exec"|"toolName":"apply_patch"|"toolName":"edit"|"toolName":"write"|"toolName":"exec"')"
-if [[ -z "$HISTORY_LINE" || -z "$WRITE_LINE" || "$HISTORY_LINE" -gt "$WRITE_LINE" ]]; then
-  echo "recovery run did not reconstruct via sessions_history before writing artifact" >&2
+if [[ -z "$HISTORY_LINE" || -z "$CONFLICT_LINE" || -z "$WRITE_LINE" || "$HISTORY_LINE" -gt "$CONFLICT_LINE" || "$CONFLICT_LINE" -gt "$WRITE_LINE" ]]; then
+  echo "recovery run did not reconstruct via sessions_history, read the conflict note, then write artifact in order" >&2
   exit 1
 fi
 
-assert_valid_artifact "$ARTIFACT_PATH" "$RESUME_FAILURE_MARKER"
+assert_valid_artifact "$ARTIFACT_PATH" "$RESUME_FAILURE_MARKER" "$SOURCE_TAG" "$CONFLICT_MARKER" "$CONFLICT_TAG"
 ARTIFACT_TEXT="$(cat "$ARTIFACT_PATH")"
 assert_session_read_result "$RECOVERY_SESSION" "$ARTIFACT_REL" "$ARTIFACT_TEXT" >/dev/null
 
@@ -439,4 +693,5 @@ printf 'artifact_path=%s\n' "$ARTIFACT_PATH"
 printf 'resume_failure_summary=%s\n' "$EVAL_SUMMARY_PATH"
 printf 'source_tag=%s\n' "$SOURCE_TAG"
 printf 'resume_marker=%s\n' "$RESUME_FAILURE_MARKER"
+printf 'conflict_note=%s\n' "$CONFLICT_NOTE_PATH"
 echo "== local human whatsapp resume-failure eval passed =="

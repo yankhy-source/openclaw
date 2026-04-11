@@ -239,6 +239,18 @@ pnpm qa:local-agents:core-selftest
 Use the core variant for frequent local regressions. Keep the full selftest for
 end-to-end confidence on the live reply path.
 
+Run a minimal live WhatsApp transport proof without requiring the full
+Codex-backed subagent gate to be green:
+
+```bash
+PATH="${OPENCLAW_SELFTEST_NODE_BIN:-$HOME/.node22/current/bin}:$PATH" \
+pnpm qa:local-agents:whatsapp-transport-smoke
+```
+
+This only proves the WhatsApp client can deliver an exact reply through the
+configured `main` agent. It does not prove subagent orchestration or delegated
+coding intelligence.
+
 Both selftest modes also refresh a stable machine-readable report at
 `.local-agent-last-selftest.json` in the repo root. Override the target path
 with `OPENCLAW_SELFTEST_SUMMARY_PATH` if another consumer needs a different
@@ -386,6 +398,22 @@ Primary references behind those choices:
 - the spawned `oc-builder` child session runs on `openai-codex/gpt-5.3-codex-spark`
 - the spawned child uses `exec`
 - the spawned child writes the expected proof file
+
+## What the Qwen Sessions Probe Verifies
+
+- `oc-selftest-qwen` runs as a Qwen-only manager with no Codex fallback
+- `oc-selftest-qwen` either performs a real `sessions_spawn` call to `oc-builder-qwen` or fails/blocks explicitly
+- if the spawn succeeds, the `oc-builder-qwen` child runs on `qwen-portal/coder-model` and writes the proof file via `exec`
+- this probe is diagnostic only; it does not by itself prove that the full Codex-backed intelligence stack is green
+- the latest machine-readable result is written to `.local-agent-last-qwen-sessions-probe.json`
+
+## What the Alternative Provider Sessions Probes Verify
+
+- `pnpm qa:local-agents:gemini-sessions-probe` drives the same proof through `oc-selftest-gemini` and `oc-builder-gemini`, with no Codex or Qwen fallback
+- `pnpm qa:local-agents:heretic-sessions-probe` drives the same proof through `oc-selftest-heretic` and `oc-builder-heretic`, but still rejects fake-success runs that do not produce a real `sessions_spawn` trail
+- `pnpm qa:local-agents:openai-sessions-probe` drives the same proof through `oc-selftest-openai` and `oc-builder-openai`, isolating direct OpenAI API behavior from the Codex OAuth lane
+- all three probes are diagnostic only; they help classify provider/runtime blockers without changing the main green path
+- the latest machine-readable results are written to `.local-agent-last-gemini-sessions-probe.json`, `.local-agent-last-heretic-sessions-probe.json`, and `.local-agent-last-openai-sessions-probe.json`
 
 ## What the Main Routing Smoke Verifies
 

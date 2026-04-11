@@ -32,7 +32,9 @@ Use this skill when the request includes one or more of these signals:
 - If the task is multi-step repo work or patching, delegate to `oc-builder`.
 - If the task is about `claw-code` or the parity repo, delegate to `claw-code`.
 - If the request explicitly says `sessions_spawn`, "starte einen Subagenten", or otherwise asks for a fresh child run, use `sessions_spawn` directly.
+- If the tool list contains `sessions_spawn`, never claim that the tool is unavailable; call it or report the concrete tool error after the call fails.
 - Do not replace a required fresh child run with `sessions_send`, `sessions_list`, or `sessions_history`.
+- Do not perform a child task yourself when the user requested `sessions_spawn`; direct `read`, `exec`, `write`, or `edit` in the parent session is a failed delegation.
 - For local QA/selftests, prefer a new child session over reusing an older agent session.
 - When the user asks for exact output, answer only from the verified tool result.
 - Do not infer missing fields from memory or earlier turns when a fresh tool read is requested.

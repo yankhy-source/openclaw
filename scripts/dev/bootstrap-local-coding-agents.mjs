@@ -14,15 +14,37 @@ const sharedSkillsRoot = path.join(stateDir, "skills");
 const parityRoot = resolveHomePath(process.env.CLAW_CODE_PARITY_ROOT ?? path.join(repoRoot, "..", "claw-code-parity"));
 const sharedSkillIds = ["claw-code-local", "main-tool-discipline", "main-human-operator"];
 const mainPrimaryModel = "openai-codex/gpt-5.3-codex-spark";
+const qwenProbePrimaryModel = "qwen-portal/coder-model";
+const geminiProbePrimaryModel = "google-gemini/gemini-2.0-flash";
+const hereticProbePrimaryModel = "heretic-local/qwen3-4b-instruct-2507";
+const openaiProbePrimaryModel = "openai/gpt-4.1";
 const mainFallbackModels = [
-  "heretic-local/qwen3-4b-instruct-2507",
+  "qwen-portal/coder-model",
+  "claude-bridge/claude-sonnet",
   "groq/llama-3.3-70b-versatile",
   "groq/deepseek-r1-distill-llama-70b",
   "google-gemini/gemini-2.0-flash",
+  "heretic-local/qwen3-4b-instruct-2507",
 ];
 const specialistModel = {
   primary: mainPrimaryModel,
   fallbacks: [...mainFallbackModels],
+};
+const qwenProbeModel = {
+  primary: qwenProbePrimaryModel,
+  fallbacks: [],
+};
+const geminiProbeModel = {
+  primary: geminiProbePrimaryModel,
+  fallbacks: [],
+};
+const hereticProbeModel = {
+  primary: hereticProbePrimaryModel,
+  fallbacks: [],
+};
+const openaiProbeModel = {
+  primary: openaiProbePrimaryModel,
+  fallbacks: [],
 };
 
 const sharedPathPrepend = [
@@ -33,7 +55,11 @@ const sharedPathPrepend = [
 ];
 
 const agentIds = ["oc-builder", "oc-github", "claw-code"];
-const humanEvalAgentIds = ["oc-human-main", "oc-human-builder", "oc-human-recovery"];
+const qwenProbeAgentIds = ["oc-selftest-qwen", "oc-builder-qwen"];
+const geminiProbeAgentIds = ["oc-selftest-gemini", "oc-builder-gemini"];
+const hereticProbeAgentIds = ["oc-selftest-heretic", "oc-builder-heretic"];
+const openaiProbeAgentIds = ["oc-selftest-openai", "oc-builder-openai"];
+const humanEvalAgentIds = ["oc-human-main", "oc-human-source", "oc-human-builder", "oc-human-recovery"];
 
 await ensureExists(path.dirname(configPath), "OpenClaw config directory");
 await ensureExists(parityRoot, "claw-code parity repository");
@@ -49,7 +75,7 @@ const summary = {
   sharedSkills: sharedSkillIds.map((id) => path.join(sharedSkillsRoot, id)),
   repoRoot,
   parityRoot,
-  agentIds: [...agentIds, ...humanEvalAgentIds],
+  agentIds: [...agentIds, ...qwenProbeAgentIds, ...geminiProbeAgentIds, ...hereticProbeAgentIds, ...openaiProbeAgentIds, ...humanEvalAgentIds],
 };
 console.log(JSON.stringify(summary, null, 2));
 
@@ -110,8 +136,13 @@ function mutateConfig(config) {
   config.tools.sessions ??= {};
   config.agents.defaults.subagents ??= {};
   config.agents.defaults.sandbox ??= {};
+  config.agents.defaults.models ??= {};
   config.agents.defaults.sandbox.mode = "off";
   config.agents.defaults.subagents.model = mainPrimaryModel;
+  delete config.agents.defaults.models["openai/gpt-4.1-mini"];
+  for (const modelRef of [mainPrimaryModel, ...mainFallbackModels]) {
+    config.agents.defaults.models[modelRef] ??= {};
+  }
   config.tools.sessions.visibility = "all";
   config.tools.deny = Array.isArray(config.tools.deny)
     ? config.tools.deny.filter(
@@ -160,6 +191,214 @@ function mutateConfig(config) {
       identity: {
         name: "OpenClaw Builder",
         theme: "Local code execution and patching",
+        emoji: "🛠️",
+      },
+      tools: {
+        profile: "coding",
+        fs: {
+          workspaceOnly: true,
+        },
+        exec: {
+          pathPrepend: sharedPathPrepend,
+        },
+      },
+    },
+    {
+      id: "oc-selftest-qwen",
+      name: "OpenClaw Selftest Qwen Probe",
+      workspace: repoRoot,
+      model: {
+        primary: qwenProbeModel.primary,
+        fallbacks: [...qwenProbeModel.fallbacks],
+      },
+      skills: ["main-tool-discipline", "session-logs"],
+      identity: {
+        name: "OpenClaw Selftest Qwen Probe",
+        theme: "Qwen-only orchestration probe for sessions_spawn",
+        emoji: "🧪",
+      },
+      subagents: {
+        model: qwenProbePrimaryModel,
+        allowAgents: ["oc-builder-qwen"],
+      },
+      tools: {
+        profile: "coding",
+        fs: {
+          workspaceOnly: true,
+        },
+        exec: {
+          pathPrepend: sharedPathPrepend,
+        },
+      },
+    },
+    {
+      id: "oc-builder-qwen",
+      name: "OpenClaw Builder Qwen Probe",
+      workspace: repoRoot,
+      model: {
+        primary: qwenProbeModel.primary,
+        fallbacks: [...qwenProbeModel.fallbacks],
+      },
+      skills: ["claw-code-local", "coding-agent", "github", "session-logs"],
+      identity: {
+        name: "OpenClaw Builder Qwen Probe",
+        theme: "Qwen-only execution probe for delegated coding tasks",
+        emoji: "🛠️",
+      },
+      tools: {
+        profile: "coding",
+        fs: {
+          workspaceOnly: true,
+        },
+        exec: {
+          pathPrepend: sharedPathPrepend,
+        },
+      },
+    },
+    {
+      id: "oc-selftest-gemini",
+      name: "OpenClaw Selftest Gemini Probe",
+      workspace: repoRoot,
+      model: {
+        primary: geminiProbeModel.primary,
+        fallbacks: [...geminiProbeModel.fallbacks],
+      },
+      skills: ["main-tool-discipline", "session-logs"],
+      identity: {
+        name: "OpenClaw Selftest Gemini Probe",
+        theme: "Gemini-only orchestration probe for sessions_spawn",
+        emoji: "🧪",
+      },
+      subagents: {
+        model: geminiProbePrimaryModel,
+        allowAgents: ["oc-builder-gemini"],
+      },
+      tools: {
+        profile: "coding",
+        fs: {
+          workspaceOnly: true,
+        },
+        exec: {
+          pathPrepend: sharedPathPrepend,
+        },
+      },
+    },
+    {
+      id: "oc-builder-gemini",
+      name: "OpenClaw Builder Gemini Probe",
+      workspace: repoRoot,
+      model: {
+        primary: geminiProbeModel.primary,
+        fallbacks: [...geminiProbeModel.fallbacks],
+      },
+      skills: ["claw-code-local", "coding-agent", "github", "session-logs"],
+      identity: {
+        name: "OpenClaw Builder Gemini Probe",
+        theme: "Gemini-only execution probe for delegated coding tasks",
+        emoji: "🛠️",
+      },
+      tools: {
+        profile: "coding",
+        fs: {
+          workspaceOnly: true,
+        },
+        exec: {
+          pathPrepend: sharedPathPrepend,
+        },
+      },
+    },
+    {
+      id: "oc-selftest-heretic",
+      name: "OpenClaw Selftest Heretic Probe",
+      workspace: repoRoot,
+      model: {
+        primary: hereticProbeModel.primary,
+        fallbacks: [...hereticProbeModel.fallbacks],
+      },
+      skills: ["main-tool-discipline", "session-logs"],
+      identity: {
+        name: "OpenClaw Selftest Heretic Probe",
+        theme: "Heretic-only orchestration probe for sessions_spawn",
+        emoji: "🧪",
+      },
+      subagents: {
+        model: hereticProbePrimaryModel,
+        allowAgents: ["oc-builder-heretic"],
+      },
+      tools: {
+        profile: "coding",
+        fs: {
+          workspaceOnly: true,
+        },
+        exec: {
+          pathPrepend: sharedPathPrepend,
+        },
+      },
+    },
+    {
+      id: "oc-builder-heretic",
+      name: "OpenClaw Builder Heretic Probe",
+      workspace: repoRoot,
+      model: {
+        primary: hereticProbeModel.primary,
+        fallbacks: [...hereticProbeModel.fallbacks],
+      },
+      skills: ["claw-code-local", "coding-agent", "github", "session-logs"],
+      identity: {
+        name: "OpenClaw Builder Heretic Probe",
+        theme: "Heretic-only execution probe for delegated coding tasks",
+        emoji: "🛠️",
+      },
+      tools: {
+        profile: "coding",
+        fs: {
+          workspaceOnly: true,
+        },
+        exec: {
+          pathPrepend: sharedPathPrepend,
+        },
+      },
+    },
+    {
+      id: "oc-selftest-openai",
+      name: "OpenClaw Selftest OpenAI Probe",
+      workspace: repoRoot,
+      model: {
+        primary: openaiProbeModel.primary,
+        fallbacks: [...openaiProbeModel.fallbacks],
+      },
+      skills: ["main-tool-discipline", "session-logs"],
+      identity: {
+        name: "OpenClaw Selftest OpenAI Probe",
+        theme: "OpenAI-only orchestration probe for sessions_spawn",
+        emoji: "🧪",
+      },
+      subagents: {
+        model: openaiProbePrimaryModel,
+        allowAgents: ["oc-builder-openai"],
+      },
+      tools: {
+        profile: "coding",
+        fs: {
+          workspaceOnly: true,
+        },
+        exec: {
+          pathPrepend: sharedPathPrepend,
+        },
+      },
+    },
+    {
+      id: "oc-builder-openai",
+      name: "OpenClaw Builder OpenAI Probe",
+      workspace: repoRoot,
+      model: {
+        primary: openaiProbeModel.primary,
+        fallbacks: [...openaiProbeModel.fallbacks],
+      },
+      skills: ["claw-code-local", "coding-agent", "github", "session-logs"],
+      identity: {
+        name: "OpenClaw Builder OpenAI Probe",
+        theme: "OpenAI-only execution probe for delegated coding tasks",
         emoji: "🛠️",
       },
       tools: {
@@ -273,6 +512,30 @@ function mutateConfig(config) {
       },
     },
     {
+      id: "oc-human-source",
+      name: "OpenClaw Human Source",
+      workspace: repoRoot,
+      model: {
+        primary: specialistModel.primary,
+        fallbacks: [...specialistModel.fallbacks],
+      },
+      skills: ["main-tool-discipline", "main-human-operator", "session-logs"],
+      identity: {
+        name: "OpenClaw Human Source",
+        theme: "Fresh source context for recovery reconstruction tests",
+        emoji: "🧩",
+      },
+      tools: {
+        profile: "coding",
+        fs: {
+          workspaceOnly: true,
+        },
+        exec: {
+          pathPrepend: sharedPathPrepend,
+        },
+      },
+    },
+    {
       id: "oc-human-recovery",
       name: "OpenClaw Human Recovery",
       workspace: repoRoot,
@@ -308,6 +571,10 @@ function mutateConfig(config) {
     "main",
     "oc-selftest",
     ...agentIds,
+    ...qwenProbeAgentIds,
+    ...geminiProbeAgentIds,
+    ...hereticProbeAgentIds,
+    ...openaiProbeAgentIds,
     ...humanEvalAgentIds,
   ]);
 

@@ -14,6 +14,7 @@ READ_JSON="$SELFTEST_ROOT/read.json"
 PATCH_JSON="$SELFTEST_ROOT/patch.json"
 WA_JSON="$SELFTEST_ROOT/whatsapp.json"
 MAIN_JSON="$SELFTEST_ROOT/main.json"
+TOOL_PROVIDER_PREFLIGHT_JSON="$SELFTEST_ROOT/tool-provider-preflight.json"
 EXEC_PROOF="$SELFTEST_ROOT/exec-proof.txt"
 READ_PROOF="$SELFTEST_ROOT/read-proof.txt"
 READ_RESULT="$SELFTEST_ROOT/read-result.txt"
@@ -22,6 +23,7 @@ MAIN_STRUCTURED_PROOF="$SELFTEST_ROOT/main-structured-proof.json"
 MAIN_WORKSPACE_PROOF=""
 SKIP_WHATSAPP="${OPENCLAW_SELFTEST_SKIP_WHATSAPP:-0}"
 SELFTEST_MANAGER_ID="${OPENCLAW_SELFTEST_MANAGER_ID:-oc-selftest}"
+SELFTEST_MANAGER_SESSION_ID="${OPENCLAW_SELFTEST_MANAGER_SESSION_ID:-local-selftest-$(date +%s)-$RANDOM}"
 SUBAGENT_WAIT_ATTEMPTS="${OPENCLAW_SELFTEST_SUBAGENT_WAIT_ATTEMPTS:-180}"
 SUBAGENT_WAIT_DELAY="${OPENCLAW_SELFTEST_SUBAGENT_WAIT_DELAY:-1}"
 SELFTEST_MODE="live"
@@ -30,6 +32,7 @@ SELFTEST_CURRENT_STEP="init"
 SELFTEST_FAILED_STEP=""
 SELFTEST_FAILED_COMMAND=""
 SELFTEST_WHATSAPP_TOKEN=""
+SELFTEST_EXIT_CODE=0
 declare -a SELFTEST_COMPLETED_STEPS=()
 
 if [[ "$SKIP_WHATSAPP" == "1" ]]; then
@@ -40,7 +43,11 @@ cleanup() {
   if [[ -n "$MAIN_WORKSPACE_PROOF" && -f "$MAIN_WORKSPACE_PROOF" ]]; then
     rm -f "$MAIN_WORKSPACE_PROOF"
   fi
-  rm -rf "$SELFTEST_ROOT"
+  if [[ "$SELFTEST_EXIT_CODE" -eq 0 && "$SELFTEST_CURRENT_STEP" == "done" ]]; then
+    rm -rf "$SELFTEST_ROOT"
+  else
+    echo "preserving selftest artifacts: $SELFTEST_ROOT" >&2
+  fi
 }
 
 mark_step_completed() {
@@ -50,8 +57,10 @@ mark_step_completed() {
 write_selftest_summary() {
   local exit_code="$1"
   local status="failed"
-  if [[ "$exit_code" -eq 0 ]]; then
+  if [[ "$exit_code" -eq 0 && "$SELFTEST_CURRENT_STEP" == "done" ]]; then
     status="passed"
+  elif [[ "$exit_code" -eq 2 ]]; then
+    status="blocked"
   fi
   python3 - <<'PY' \
     "$SELFTEST_SUMMARY_PATH" \
@@ -60,6 +69,8 @@ write_selftest_summary() {
     "$SELFTEST_STARTED_AT" \
     "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
     "$REPO_ROOT" \
+    "$SELFTEST_ROOT" \
+    "$SELFTEST_MANAGER_SESSION_ID" \
     "$SELFTEST_CURRENT_STEP" \
     "$SELFTEST_FAILED_STEP" \
     "$SELFTEST_FAILED_COMMAND" \
@@ -73,11 +84,13 @@ status = sys.argv[3]
 started_at = sys.argv[4]
 finished_at = sys.argv[5]
 repo_root = sys.argv[6]
-current_step = sys.argv[7]
-failed_step = sys.argv[8] or None
-failed_command = sys.argv[9] or None
-whatsapp_token = sys.argv[10] or None
-steps = sys.argv[11:]
+artifact_root = sys.argv[7]
+manager_session_id = sys.argv[8]
+current_step = sys.argv[9]
+failed_step = sys.argv[10] or None
+failed_command = sys.argv[11] or None
+whatsapp_token = sys.argv[12] or None
+steps = sys.argv[13:]
 
 summary = {
     "summaryVersion": 1,
@@ -87,6 +100,8 @@ summary = {
     "finishedAt": finished_at,
     "repoRoot": repo_root,
     "summaryPath": str(summary_path),
+    "artifactRoot": artifact_root,
+    "managerSessionId": manager_session_id,
     "currentStep": current_step,
     "failedStep": failed_step,
     "failedCommand": failed_command,
@@ -106,6 +121,13 @@ on_error() {
 
 on_exit() {
   local exit_code="$1"
+  SELFTEST_EXIT_CODE="$exit_code"
+  if [[ "$exit_code" -ne 0 && -z "$SELFTEST_FAILED_STEP" ]]; then
+    SELFTEST_FAILED_STEP="$SELFTEST_CURRENT_STEP"
+  fi
+  if [[ "$exit_code" -ne 0 && -z "$SELFTEST_FAILED_COMMAND" ]]; then
+    SELFTEST_FAILED_COMMAND="selftest exited with code $exit_code during $SELFTEST_CURRENT_STEP"
+  fi
   trap - EXIT ERR
   set +e
   write_selftest_summary "$exit_code"
@@ -198,6 +220,26 @@ print(relative.as_posix())
 PY
 }
 
+archive_selftest_manager_sessions() {
+  local session_dir="$STATE_DIR/agents/$SELFTEST_MANAGER_ID/sessions"
+  local archive_dir="$STATE_DIR/agents/$SELFTEST_MANAGER_ID/session-archives/$SELFTEST_MANAGER_SESSION_ID"
+  if [[ ! -d "$session_dir" ]]; then
+    mkdir -p "$session_dir"
+    return 0
+  fi
+
+  shopt -s nullglob
+  local files=("$session_dir"/*)
+  shopt -u nullglob
+  if ((${#files[@]} == 0)); then
+    return 0
+  fi
+
+  mkdir -p "$archive_dir"
+  mv "${files[@]}" "$archive_dir"/
+  mkdir -p "$session_dir"
+}
+
 spawn_specialist_child_session() {
   local json_path="$1"
   local agent_id="$2"
@@ -207,21 +249,40 @@ spawn_specialist_child_session() {
   local main_session
   local main_before_lines
 
-  main_session="$(agent_main_session_jsonl "$SELFTEST_MANAGER_ID")"
+  main_session="$(session_jsonl_for_id "$SELFTEST_MANAGER_ID" "$SELFTEST_MANAGER_SESSION_ID")"
+  if [[ -z "$main_session" || ! -f "$main_session" ]]; then
+    main_session="$(agent_main_session_jsonl "$SELFTEST_MANAGER_ID")"
+  fi
   if [[ -z "$main_session" || ! -f "$main_session" ]]; then
     main_before_lines=0
   else
     main_before_lines="$(session_line_count "$main_session")"
   fi
 
-  run_openclaw_agent_json "$json_path" --agent "$SELFTEST_MANAGER_ID" --message "Nutze sessions_spawn und starte einen ${agent_id}-Subagenten. Child-Task: ${child_task} Antworte exakt mit ${accept_token}, sobald der Child-Run akzeptiert wurde."
+  run_openclaw_agent_json "$json_path" --agent "$SELFTEST_MANAGER_ID" --session-id "$SELFTEST_MANAGER_SESSION_ID" --message "Harter Selftest: Der Tool-Katalog enthält sessions_spawn. Nutze zwingend einen echten sessions_spawn-Toolcall und starte einen ${agent_id}-Subagenten. Führe den Child-Task nicht selbst aus. Behaupte nicht, sessions_spawn sei nicht verfügbar. Child-Task: ${child_task} Antworte exakt mit ${accept_token}, aber erst nachdem der sessions_spawn-Toolresult status=accepted geliefert hat." || exit $?
   if [[ -z "$main_session" || ! -f "$main_session" ]]; then
-    main_session="$(wait_for_agent_main_session_jsonl "$SELFTEST_MANAGER_ID" "$SUBAGENT_WAIT_ATTEMPTS" "$SUBAGENT_WAIT_DELAY")"
+    main_session="$(session_jsonl_for_id "$SELFTEST_MANAGER_ID" "$SELFTEST_MANAGER_SESSION_ID")"
+    if [[ -z "$main_session" || ! -f "$main_session" ]]; then
+      main_session="$(wait_for_agent_main_session_jsonl "$SELFTEST_MANAGER_ID" "$SUBAGENT_WAIT_ATTEMPTS" "$SUBAGENT_WAIT_DELAY")" || exit $?
+    fi
   fi
-  run_json_assert "$json_path" "$accept_token" >/dev/null
-  wait_for_session_pattern_after_line "$main_session" "$main_before_lines" '"name":"sessions_spawn"|"toolName":"sessions_spawn"' "$SUBAGENT_WAIT_ATTEMPTS" "$SUBAGENT_WAIT_DELAY"
-  wait_for_session_pattern_after_line "$main_session" "$main_before_lines" "$target_path" "$SUBAGENT_WAIT_ATTEMPTS" "$SUBAGENT_WAIT_DELAY"
-  wait_for_child_session_from_main_after_line "$main_session" "$main_before_lines" "$agent_id" "$target_path" "$SUBAGENT_WAIT_ATTEMPTS" "$SUBAGENT_WAIT_DELAY"
+  if ! run_json_assert "$json_path" "$accept_token" >/dev/null; then
+    if agent_json_indicates_missing_tool "$json_path" "sessions_spawn"; then
+      local provider
+      local model
+      provider="$(agent_json_meta_field "$json_path" provider || true)"
+      model="$(agent_json_meta_field "$json_path" model || true)"
+      echo "sessions_spawn proof blocked: ${provider:-unknown}/${model:-unknown} did not expose the sessions_spawn runtime tool" >&2
+      SELFTEST_FAILED_STEP="$SELFTEST_CURRENT_STEP"
+      SELFTEST_FAILED_COMMAND="sessions_spawn unavailable in ${provider:-unknown}/${model:-unknown}"
+      exit 2
+    fi
+    exit 1
+  fi
+  assert_agent_json_not_heretic_fallback "$json_path" "sessions_spawn proof for $agent_id" || exit $?
+  wait_for_session_pattern_after_line "$main_session" "$main_before_lines" '"name":"sessions_spawn"|"toolName":"sessions_spawn"' "$SUBAGENT_WAIT_ATTEMPTS" "$SUBAGENT_WAIT_DELAY" || exit $?
+  wait_for_session_pattern_after_line "$main_session" "$main_before_lines" "$target_path" "$SUBAGENT_WAIT_ATTEMPTS" "$SUBAGENT_WAIT_DELAY" || exit $?
+  wait_for_child_session_from_main_after_line "$main_session" "$main_before_lines" "$agent_id" "$target_path" "$SUBAGENT_WAIT_ATTEMPTS" "$SUBAGENT_WAIT_DELAY" || exit $?
 }
 
 echo "== bootstrap local coding agents =="
@@ -233,6 +294,24 @@ echo "== gateway health =="
 SELFTEST_CURRENT_STEP="gateway_health"
 openclaw_ensure_gateway_healthy
 mark_step_completed "gateway_health"
+
+echo "== tool provider preflight =="
+SELFTEST_CURRENT_STEP="tool_provider_preflight"
+if OPENCLAW_TOOL_PROVIDER_PREFLIGHT_PROVIDERS="${OPENCLAW_SESSIONS_PROVIDER_PREFLIGHT_PROVIDERS:-openai-codex}" \
+  openclaw_tool_provider_preflight "$TOOL_PROVIDER_PREFLIGHT_JSON" "$SELFTEST_MANAGER_ID"; then
+  :
+else
+  preflight_status=$?
+  SELFTEST_FAILED_STEP="$SELFTEST_CURRENT_STEP"
+  SELFTEST_FAILED_COMMAND="sessions provider preflight did not find an available openai-codex tool runtime"
+  exit "$preflight_status"
+fi
+mark_step_completed "tool_provider_preflight"
+
+echo "== isolate selftest manager session =="
+SELFTEST_CURRENT_STEP="manager_session_isolation"
+archive_selftest_manager_sessions
+mark_step_completed "manager_session_isolation"
 
 echo "== exec proof =="
 SELFTEST_CURRENT_STEP="exec_proof"
@@ -264,8 +343,8 @@ mark_step_completed "read_proof"
 
 echo "== main exact-read proof =="
 SELFTEST_CURRENT_STEP="main_exact_read"
-MAIN_DEFAULT="heretic-local/qwen3-4b-instruct-2507"
-MAIN_FALLBACK="openai-codex/gpt-5.3-codex-spark"
+MAIN_DEFAULT="openai-codex/gpt-5.3-codex-spark"
+MAIN_FALLBACK="qwen-portal/coder-model"
 MAIN_SESSION="$(main_session_jsonl)"
 if [[ -z "$MAIN_SESSION" || ! -f "$MAIN_SESSION" ]]; then
   echo "could not resolve main session file" >&2

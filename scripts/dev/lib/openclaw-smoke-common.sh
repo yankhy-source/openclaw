@@ -13,6 +13,16 @@ import json, sys
 path, expected = sys.argv[1], sys.argv[2]
 decoder = json.JSONDecoder()
 best = None
+
+def result_payload(candidate):
+    if not isinstance(candidate, dict):
+        return None
+    if isinstance(candidate.get("result"), dict):
+        return candidate["result"]
+    if isinstance(candidate.get("payloads"), list):
+        return candidate
+    return None
+
 with open(path, "r", encoding="utf-8") as handle:
     raw = handle.read()
 for index, char in enumerate(raw):
@@ -22,25 +32,43 @@ for index, char in enumerate(raw):
         candidate, _ = decoder.raw_decode(raw[index:])
     except json.JSONDecodeError:
         continue
-    if isinstance(candidate, dict) and "result" in candidate:
-        best = candidate
+    payload = result_payload(candidate)
+    if payload is not None:
+        best = payload
 if best is None:
     raise SystemExit(f"{path}: missing JSON payload")
 payload = best
-text = payload["result"]["payloads"][0]["text"]
+texts = [
+    item.get("text", "")
+    for item in payload.get("payloads") or []
+    if isinstance(item, dict) and item.get("text", "").strip()
+]
+if not texts:
+    raise SystemExit(f"{path}: missing non-empty text payload")
+text = texts[-1]
 first_line = text.splitlines()[0] if text else ""
 if text != expected and first_line != expected:
-    raise SystemExit(f"{path}: unexpected text {text!r} != {expected!r}")
+    raise SystemExit(f"{path}: unexpected final text {text!r} != {expected!r}")
 print(first_line if first_line == expected else text)
 PY
 }
 
-json_payload_has_result() {
+json_payload_has_text_result() {
   local json_path="$1"
   python3 - <<'PY' "$json_path"
 import json, sys
 path = sys.argv[1]
 decoder = json.JSONDecoder()
+
+def result_payload(candidate):
+    if not isinstance(candidate, dict):
+        return None
+    if isinstance(candidate.get("result"), dict):
+        return candidate["result"]
+    if isinstance(candidate.get("payloads"), list):
+        return candidate
+    return None
+
 with open(path, "r", encoding="utf-8") as handle:
     raw = handle.read()
 for index, char in enumerate(raw):
@@ -50,10 +78,374 @@ for index, char in enumerate(raw):
         candidate, _ = decoder.raw_decode(raw[index:])
     except json.JSONDecodeError:
         continue
-    if isinstance(candidate, dict) and "result" in candidate:
-        raise SystemExit(0)
+    payload = result_payload(candidate)
+    if payload is not None:
+        payloads = payload.get("payloads") or []
+        texts = [item.get("text", "") for item in payloads if isinstance(item, dict)]
+        if any(text.strip() for text in texts):
+            raise SystemExit(0)
 raise SystemExit(1)
 PY
+}
+
+json_payload_empty_text_summary() {
+  local json_path="$1"
+  python3 - <<'PY' "$json_path"
+import json, sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+raw = path.read_text(encoding="utf-8")
+decoder = json.JSONDecoder()
+payload = None
+run_id = "unknown"
+
+def result_payload(candidate):
+    if not isinstance(candidate, dict):
+        return None
+    if isinstance(candidate.get("result"), dict):
+        return candidate["result"]
+    if isinstance(candidate.get("payloads"), list):
+        return candidate
+    return None
+
+for index, char in enumerate(raw):
+    if char != "{":
+        continue
+    try:
+        candidate, _ = decoder.raw_decode(raw[index:])
+    except json.JSONDecodeError:
+        continue
+    result = result_payload(candidate)
+    if result is not None:
+        payload = result
+        if isinstance(candidate, dict):
+            run_id = candidate.get("runId") or run_id
+if payload is None:
+    raise SystemExit(1)
+result = payload
+payloads = result.get("payloads") or []
+texts = [item.get("text", "") for item in payloads if isinstance(item, dict)]
+if any(text.strip() for text in texts):
+    raise SystemExit(1)
+agent_meta = result.get("meta", {}).get("agentMeta", {})
+provider = agent_meta.get("provider") or "unknown"
+model = agent_meta.get("model") or "unknown"
+print(
+    f"openclaw agent produced no text payload: runId={run_id} "
+    f"provider={provider} model={model} payloads={len(payloads)}"
+)
+raise SystemExit(0)
+PY
+}
+
+agent_json_meta_field() {
+  local json_path="$1"
+  local field="$2"
+  python3 - <<'PY' "$json_path" "$field"
+import json, sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+field = sys.argv[2]
+raw = path.read_text(encoding="utf-8")
+decoder = json.JSONDecoder()
+payload = None
+
+def result_payload(candidate):
+    if not isinstance(candidate, dict):
+        return None
+    if isinstance(candidate.get("result"), dict):
+        return candidate["result"]
+    if isinstance(candidate.get("payloads"), list):
+        return candidate
+    return None
+
+for index, char in enumerate(raw):
+    if char != "{":
+        continue
+    try:
+        candidate, _ = decoder.raw_decode(raw[index:])
+    except json.JSONDecodeError:
+        continue
+    result = result_payload(candidate)
+    if result is not None:
+        payload = result
+if payload is None:
+    raise SystemExit(1)
+value = payload.get("meta", {}).get("agentMeta", {}).get(field)
+if value is None:
+    raise SystemExit(1)
+print(value)
+PY
+}
+
+agent_json_indicates_missing_tool() {
+  local json_path="$1"
+  local tool_name="$2"
+  python3 - <<'PY' "$json_path" "$tool_name"
+import json
+import re
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+tool_name = sys.argv[2]
+raw = path.read_text(encoding="utf-8")
+decoder = json.JSONDecoder()
+payload = None
+
+def result_payload(candidate):
+    if not isinstance(candidate, dict):
+        return None
+    if isinstance(candidate.get("result"), dict):
+        return candidate["result"]
+    if isinstance(candidate.get("payloads"), list):
+        return candidate
+    return None
+
+for index, char in enumerate(raw):
+    if char != "{":
+        continue
+    try:
+        candidate, _ = decoder.raw_decode(raw[index:])
+    except json.JSONDecodeError:
+        continue
+    result = result_payload(candidate)
+    if result is not None:
+        payload = result
+
+if payload is None:
+    raise SystemExit(1)
+
+texts = [
+    item.get("text", "")
+    for item in payload.get("payloads") or []
+    if isinstance(item, dict)
+]
+text = "\n".join(texts).lower()
+tool = tool_name.lower()
+missing_patterns = [
+    rf"{re.escape(tool)}[^.\n]{{0,120}}not (among|available|in|found)",
+    rf"no [`']?{re.escape(tool)}[`']? tool",
+    rf"kein [`']?{re.escape(tool)}[`']?-tool",
+    rf"kein [`']?{re.escape(tool)}[`']?",
+    rf"{re.escape(tool)}[^.\n]{{0,160}}nicht[^.\n]{{0,80}}(verf[üu]gbar|zur verf[üu]gung)",
+    rf"{re.escape(tool)}[^.\n]{{0,160}}steht[^.\n]{{0,80}}nicht[^.\n]{{0,80}}zur verf[üu]gung",
+    rf"do not have (a |the )?[`']?{re.escape(tool)}[`']?",
+    rf"cannot (use|call|make).*{re.escape(tool)}",
+    rf"{re.escape(tool)}[^.\n]{{0,120}}does(n't| not) exist",
+]
+if tool in text and any(re.search(pattern, text) for pattern in missing_patterns):
+    raise SystemExit(0)
+raise SystemExit(1)
+PY
+}
+
+assert_agent_json_not_heretic_fallback() {
+  local json_path="$1"
+  local context="$2"
+  local provider
+  local model
+  provider="$(agent_json_meta_field "$json_path" provider || true)"
+  model="$(agent_json_meta_field "$json_path" model || true)"
+  if [[ "$provider" == "heretic-local" ]]; then
+    echo "$context reached heretic-local/$model; tool-critical selftests require a tool-reliable model before continuing" >&2
+    exit 2
+  fi
+}
+
+openclaw_tool_provider_preflight() {
+  local output_path="$1"
+  local agent_id="${2:-}"
+  local allowed_providers="${OPENCLAW_TOOL_PROVIDER_PREFLIGHT_PROVIDERS:-openai,openai-codex,qwen-portal,claude-bridge,groq,google-gemini}"
+  local timeout_ms="${OPENCLAW_TOOL_PROVIDER_PREFLIGHT_TIMEOUT_MS:-15000}"
+  local concurrency="${OPENCLAW_TOOL_PROVIDER_PREFLIGHT_CONCURRENCY:-2}"
+  local max_tokens="${OPENCLAW_TOOL_PROVIDER_PREFLIGHT_MAX_TOKENS:-4}"
+  local args=(
+    models
+    status
+    --json
+    --probe
+    --probe-timeout "$timeout_ms"
+    --probe-concurrency "$concurrency"
+    --probe-max-tokens "$max_tokens"
+  )
+  local tmp_output
+  local status
+
+  if [[ -n "$agent_id" ]]; then
+    args+=(--agent "$agent_id")
+  fi
+  if [[ "$allowed_providers" != *,* ]]; then
+    args+=(--probe-provider "$allowed_providers")
+  fi
+
+  tmp_output="$(mktemp "${TMPDIR:-/tmp}/openclaw-tool-provider-preflight.XXXXXX")"
+  if openclaw "${args[@]}" >"$tmp_output" 2>&1; then
+    status=0
+  else
+    status=$?
+  fi
+
+  if [[ "$status" -ne 0 ]]; then
+    cat "$tmp_output" >&2
+    mv "$tmp_output" "$output_path"
+    return "$status"
+  fi
+
+  if python3 - <<'PY' "$tmp_output" "$output_path"
+import json
+import shutil
+import sys
+from pathlib import Path
+
+raw_path = Path(sys.argv[1])
+output_path = Path(sys.argv[2])
+raw = raw_path.read_text(encoding="utf-8")
+decoder = json.JSONDecoder()
+payload = None
+for index, char in enumerate(raw):
+    if char != "{":
+        continue
+    try:
+        candidate, _ = decoder.raw_decode(raw[index:])
+    except json.JSONDecodeError:
+        continue
+    if isinstance(candidate, dict) and candidate.get("auth", {}).get("probes"):
+        payload = candidate
+if payload is None:
+    shutil.move(str(raw_path), str(output_path))
+    raise SystemExit(1)
+output_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+raw_path.unlink()
+PY
+  then
+    :
+  else
+    echo "tool provider preflight warning: kept raw mixed output at $output_path" >&2
+  fi
+
+  python3 - <<'PY' "$output_path" "$allowed_providers"
+import json
+import sys
+from collections import defaultdict
+
+path, allowed_raw = sys.argv[1], sys.argv[2]
+allowed = {item.strip() for item in allowed_raw.split(",") if item.strip()}
+decoder = json.JSONDecoder()
+payload = None
+with open(path, "r", encoding="utf-8") as handle:
+    raw = handle.read()
+for index, char in enumerate(raw):
+    if char != "{":
+        continue
+    try:
+        candidate, _ = decoder.raw_decode(raw[index:])
+    except json.JSONDecodeError:
+        continue
+    if isinstance(candidate, dict) and candidate.get("auth", {}).get("probes"):
+        payload = candidate
+
+if payload is None:
+    print("tool provider preflight blocked: models status probe did not produce JSON", file=sys.stderr)
+    raise SystemExit(2)
+
+results = payload.get("auth", {}).get("probes", {}).get("results") or []
+candidate_results = [item for item in results if item.get("provider") in allowed]
+ok_results = [item for item in candidate_results if item.get("status") == "ok"]
+
+if ok_results:
+    first = ok_results[0]
+    label = first.get("profileId") or first.get("label") or first.get("source") or "default"
+    print(
+        "tool provider preflight ok: "
+        f"{first.get('provider')}/{first.get('model')} via {label}"
+    )
+    raise SystemExit(0)
+
+by_provider: dict[str, list[str]] = defaultdict(list)
+for item in candidate_results:
+    provider = item.get("provider") or "unknown"
+    status = item.get("status") or "unknown"
+    detail = item.get("error") or item.get("reasonCode") or item.get("label") or ""
+    detail = " ".join(str(detail).split())
+    if len(detail) > 150:
+        detail = detail[:147] + "..."
+    by_provider[provider].append(f"{status}{': ' + detail if detail else ''}")
+
+if by_provider:
+    summary = "; ".join(
+        f"{provider}={', '.join(entries[:2])}" for provider, entries in sorted(by_provider.items())
+    )
+else:
+    summary = "no probe targets for configured tool providers"
+
+print(
+    "tool provider preflight blocked: no allowed tool provider probe passed "
+    f"({summary})",
+    file=sys.stderr,
+)
+raise SystemExit(2)
+PY
+}
+
+run_openclaw_agent_capture() {
+  local output_path="$1"
+  local timeout_seconds="$2"
+  local has_timeout="$3"
+  shift 3
+  local early_accept_seconds="${OPENCLAW_SELFTEST_AGENT_EARLY_ACCEPT_SECONDS:-3}"
+  local watchdog_seconds="${OPENCLAW_SELFTEST_AGENT_WATCHDOG_SECONDS:-$((timeout_seconds + 30))}"
+  local pid
+  local started_at="$SECONDS"
+  local valid_seen_at=0
+  local status
+
+  if (( has_timeout )); then
+    openclaw agent "$@" --json >"$output_path" 2>&1 &
+  else
+    openclaw agent "$@" --timeout "$timeout_seconds" --json >"$output_path" 2>&1 &
+  fi
+  pid=$!
+
+  while kill -0 "$pid" 2>/dev/null; do
+    if json_payload_has_text_result "$output_path"; then
+      if [[ "$valid_seen_at" -eq 0 ]]; then
+        valid_seen_at="$SECONDS"
+      elif (( SECONDS - valid_seen_at >= early_accept_seconds )); then
+        {
+          echo
+          echo "[openclaw-smoke] accepted completed JSON payload and stopped still-running agent process pid=$pid"
+        } >>"$output_path"
+        kill "$pid" 2>/dev/null || true
+        sleep 1
+        kill -9 "$pid" 2>/dev/null || true
+        wait "$pid" 2>/dev/null || true
+        return 0
+      fi
+    else
+      valid_seen_at=0
+    fi
+
+    if (( SECONDS - started_at >= watchdog_seconds )); then
+      {
+        echo
+        echo "[openclaw-smoke] watchdog timeout after ${watchdog_seconds}s; stopping agent process pid=$pid"
+      } >>"$output_path"
+      kill "$pid" 2>/dev/null || true
+      sleep 1
+      kill -9 "$pid" 2>/dev/null || true
+      wait "$pid" 2>/dev/null || true
+      return 124
+    fi
+
+    sleep 1
+  done
+
+  wait "$pid"
+  status=$?
+  return "$status"
 }
 
 run_openclaw_agent_json() {
@@ -77,21 +469,13 @@ run_openclaw_agent_json() {
 
   for attempt in $(seq 1 "$attempts"); do
     tmp_output="$(mktemp "${TMPDIR:-/tmp}/openclaw-agent-json.XXXXXX")"
-    if (( has_timeout )); then
-      if openclaw agent "${args[@]}" --json >"$tmp_output" 2>&1; then
-        status=0
-      else
-        status=$?
-      fi
+    if run_openclaw_agent_capture "$tmp_output" "$timeout_seconds" "$has_timeout" "${args[@]}"; then
+      status=0
     else
-      if openclaw agent "${args[@]}" --timeout "$timeout_seconds" --json >"$tmp_output" 2>&1; then
-        status=0
-      else
-        status=$?
-      fi
+      status=$?
     fi
 
-    if json_payload_has_result "$tmp_output"; then
+    if json_payload_has_text_result "$tmp_output"; then
       mv "$tmp_output" "$output_path"
       return 0
     fi
@@ -102,8 +486,15 @@ run_openclaw_agent_json() {
       continue
     fi
 
-    cat "$tmp_output" >&2
-    rm -f "$tmp_output"
+    if json_payload_empty_text_summary "$tmp_output" >&2; then
+      mv "$tmp_output" "$output_path"
+    else
+      mv "$tmp_output" "$output_path"
+      cat "$output_path" >&2
+    fi
+    if [[ "${status:-1}" -eq 0 ]]; then
+      return 1
+    fi
     return "${status:-1}"
   done
 
@@ -753,7 +1144,13 @@ with open(session_file, "r", encoding="utf-8") as handle:
         if role == "assistant":
             for item in message.get("content") or []:
                 if item.get("type") == "toolCall" and item.get("name") == "read":
-                    tool_calls[item.get("id")] = (item.get("arguments") or {}).get("path", "")
+                    arguments = item.get("arguments") or {}
+                    tool_calls[item.get("id")] = (
+                        arguments.get("path")
+                        or arguments.get("file_path")
+                        or arguments.get("filepath")
+                        or ""
+                    )
         elif role == "toolResult" and message.get("toolName") == "read":
             tool_call_id = message.get("toolCallId")
             read_path = tool_calls.get(tool_call_id, "")

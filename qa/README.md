@@ -21,6 +21,7 @@ Key workflow:
 - `pnpm qa:local-agents:trend` reads recent per-run summaries for intelligence, recovery, human WhatsApp, the deeper human WhatsApp conversation path, and the interruption/resume path and exits non-zero on visible regressions in the inspected window.
 - `pnpm qa:local-agents:core-selftest` runs the local coding-agent proofs without the live WhatsApp delivery step.
 - `pnpm qa:local-agents:selftest` runs the local end-to-end coding stack check, including `main` exact-read discipline, `main` subagent orchestration, specialist routing, delegated patch work, and WhatsApp reply delivery.
+- `pnpm qa:local-agents:whatsapp-transport-smoke` runs a minimal live WhatsApp transport proof without requiring the full Codex-backed subagent selftest to be green first.
 - `pnpm qa:local-agents:whatsapp-smoke` runs the focused live WhatsApp client proof on top of `doctor/ensure`.
 - `pnpm qa:local-agents:human-eval` runs user-perspective questions through fresh dedicated eval agents plus a user-facing artifact task, and keeps the outputs under `.local-human-eval/` plus `.local-agent-last-human-eval.json`.
 - `pnpm qa:local-agents:human-whatsapp-eval` runs user-perspective questions over the live WhatsApp delivery path through `oc-human-main`, ensures there is a fresh enough live baseline first, and keeps the outputs under `.local-human-whatsapp-eval/` plus `.local-agent-last-human-whatsapp-eval.json`.
@@ -32,6 +33,10 @@ Key workflow:
 - `pnpm qa:local-agents:stress-recovery-smoke` runs several back-to-back live human WhatsApp evals and then a full recovery smoke, storing the aggregate result under `.local-agent-stress-recovery-smoke/` plus `.local-agent-last-stress-recovery-smoke.json`.
 - both selftest modes refresh `.local-agent-last-selftest.json` in the repo root as a machine-readable status artifact for agents and automation.
 - `pnpm qa:local-agents:main-smoke` runs `main` as an orchestrator and verifies that it spawns a Codex-backed `oc-builder` child run.
+- `pnpm qa:local-agents:qwen-sessions-probe` runs the same orchestrator proof through dedicated Qwen-only probe agents to check whether `qwen-portal/coder-model` actually exposes the `sessions_spawn` runtime tool in this local setup, and writes `.local-agent-last-qwen-sessions-probe.json`.
+- `pnpm qa:local-agents:gemini-sessions-probe` runs the same orchestrator proof through dedicated Gemini-only probe agents to detect provider/runtime mismatches on `google-gemini`, and writes `.local-agent-last-gemini-sessions-probe.json`.
+- `pnpm qa:local-agents:heretic-sessions-probe` runs the same orchestrator proof through dedicated `heretic-local` probe agents to catch fake-success or missing-tool behavior before it can pollute the main quality lane, and writes `.local-agent-last-heretic-sessions-probe.json`.
+- `pnpm qa:local-agents:openai-sessions-probe` runs the same orchestrator proof through dedicated `openai` probe agents to diagnose direct OpenAI API-backed session behavior independently of the Codex OAuth lane, and writes `.local-agent-last-openai-sessions-probe.json`.
 - `pnpm qa:local-agents:routing-smoke` verifies that `main` routes GitHub work to `oc-github` and `claw-code` work to `claw-code`.
 - `pnpm qa:local-agents:main-task-smoke` verifies that `main` delegates a small real repo patch task to `oc-builder`.
 - `pnpm qa:local-agents:task-smoke` runs one small real repo task through `oc-builder` and verifies the tool usage in session logs.
