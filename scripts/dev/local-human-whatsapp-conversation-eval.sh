@@ -37,6 +37,8 @@ TURN3_CONTEXT_MODE="memory"
 VERIFIED_WHATSAPP_TOKEN=""
 VERIFIED_MANAGER_SESSION_ID=""
 VERIFIED_SELFTEST_ARTIFACT_ROOT=""
+TURN2_CONTEXT_FAULT="${OPENCLAW_HUMAN_WHATSAPP_CONVERSATION_TURN2_CONTEXT_FAULT:-}"
+TURN3_CONTEXT_FAULT="${OPENCLAW_HUMAN_WHATSAPP_CONVERSATION_TURN3_CONTEXT_FAULT:-}"
 CONVERSATION_MARKER="nebelstern-$(python3 - <<'PY'
 import uuid
 print(uuid.uuid4().hex[:10])
@@ -237,7 +239,9 @@ write_eval_summary() {
     "$VERIFIED_WHATSAPP_TOKEN" \
     "$VERIFIED_MANAGER_SESSION_ID" \
     "$TURN2_CONTEXT_MODE" \
-    "$TURN3_CONTEXT_MODE"
+    "$TURN3_CONTEXT_MODE" \
+    "$TURN2_CONTEXT_FAULT" \
+    "$TURN3_CONTEXT_FAULT"
 import json, pathlib, sys
 
 summary_paths = [pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])]
@@ -268,6 +272,8 @@ payload = {
     "verifiedManagerSessionId": sys.argv[25] or None,
     "turn2ContextMode": sys.argv[26] or None,
     "turn3ContextMode": sys.argv[27] or None,
+    "turn2ContextFault": sys.argv[28] or None,
+    "turn3ContextFault": sys.argv[29] or None,
 }
 for summary_path in summary_paths:
     summary_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
@@ -421,6 +427,7 @@ payload = {
 path = pathlib.Path(context_path)
 path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 PY
+apply_whatsapp_run_context_fault "$TURN2_CONTEXT_PATH" "$TURN2_CONTEXT_FAULT"
 if ! verify_whatsapp_run_context_json "$TURN2_CONTEXT_PATH"; then
   TURN2_CONTEXT_MODE="history"
 fi
@@ -532,6 +539,7 @@ payload = {
 path = pathlib.Path(context_path)
 path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 PY
+apply_whatsapp_run_context_fault "$TURN3_CONTEXT_PATH" "$TURN3_CONTEXT_FAULT"
 if ! verify_whatsapp_run_context_json "$TURN3_CONTEXT_PATH"; then
   TURN3_CONTEXT_MODE="history"
 fi

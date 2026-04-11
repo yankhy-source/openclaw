@@ -20,6 +20,9 @@ def latest_or_none(items: list[dict]) -> dict | None:
 def build_result(repo_root: Path, window: int) -> dict:
     intelligence_base = Path(os.environ.get("OPENCLAW_INTELLIGENCE_LOOP_BASE", repo_root / ".local-agent-intelligence-loop"))
     recovery_base = Path(os.environ.get("OPENCLAW_RECOVERY_SMOKE_BASE", repo_root / ".local-agent-recovery-smoke"))
+    context_fallback_base = Path(
+        os.environ.get("OPENCLAW_CONTEXT_FALLBACK_SMOKE_BASE", repo_root / ".local-agent-context-fallback-smoke")
+    )
     human_whatsapp_base = Path(os.environ.get("OPENCLAW_HUMAN_WHATSAPP_EVAL_BASE", repo_root / ".local-human-whatsapp-eval"))
     human_whatsapp_conversation_base = Path(
         os.environ.get(
@@ -58,6 +61,7 @@ def build_result(repo_root: Path, window: int) -> dict:
 
     intelligence_runs, intelligence_skipped = load_run_summaries(intelligence_base, "intelligence")
     recovery_runs, recovery_skipped = load_run_summaries(recovery_base, "recovery")
+    context_fallback_runs, context_fallback_skipped = load_run_summaries(context_fallback_base, "context_fallback")
     human_whatsapp_runs, human_whatsapp_skipped = load_run_summaries(human_whatsapp_base, "human_whatsapp")
     human_whatsapp_conversation_runs, human_whatsapp_conversation_skipped = load_run_summaries(
         human_whatsapp_conversation_base,
@@ -79,6 +83,7 @@ def build_result(repo_root: Path, window: int) -> dict:
 
     intelligence_latest = latest_or_none(intelligence_runs)
     recovery_latest = latest_or_none(recovery_runs)
+    context_fallback_latest = latest_or_none(context_fallback_runs)
     human_whatsapp_latest = latest_or_none(human_whatsapp_runs)
     human_whatsapp_conversation_latest = latest_or_none(human_whatsapp_conversation_runs)
     human_whatsapp_resume_latest = latest_or_none(human_whatsapp_resume_runs)
@@ -108,6 +113,10 @@ def build_result(repo_root: Path, window: int) -> dict:
         problems.append("missing recovery-smoke summary")
     elif recovery_latest.get("status") != "passed":
         problems.append(latest_problem("recovery smoke", recovery_latest))
+    if not context_fallback_latest:
+        problems.append("missing context-fallback summary")
+    elif context_fallback_latest.get("status") != "passed":
+        problems.append(latest_problem("context fallback smoke", context_fallback_latest))
 
     if not human_whatsapp_latest:
         problems.append("missing human-whatsapp summary")
@@ -130,6 +139,7 @@ def build_result(repo_root: Path, window: int) -> dict:
 
     recent_intelligence_failures = sum(1 for item in intelligence_runs[:window] if item.get("status") != "passed")
     recent_recovery_failures = sum(1 for item in recovery_runs[:window] if item.get("status") != "passed")
+    recent_context_fallback_failures = sum(1 for item in context_fallback_runs[:window] if item.get("status") != "passed")
     recent_human_whatsapp_failures = sum(1 for item in human_whatsapp_runs[:window] if item.get("status") != "passed")
     recent_human_whatsapp_conversation_failures = sum(
         1 for item in human_whatsapp_conversation_runs[:window] if item.get("status") != "passed"
@@ -144,6 +154,8 @@ def build_result(repo_root: Path, window: int) -> dict:
         warnings.append("recent intelligence-loop history contains non-passed runs")
     if recent_recovery_failures:
         warnings.append("recent recovery-smoke history contains non-passed runs")
+    if recent_context_fallback_failures:
+        warnings.append("recent context-fallback history contains non-passed runs")
     if recent_human_whatsapp_failures:
         warnings.append("recent human-whatsapp history contains non-passed runs")
     if recent_human_whatsapp_conversation_failures:
@@ -202,6 +214,22 @@ def build_result(repo_root: Path, window: int) -> dict:
             "ageSeconds": age_seconds(recovery_latest.get("finishedAt")) if recovery_latest else None,
             "recentFailCount": recent_recovery_failures,
             "skippedCount": recovery_skipped,
+        },
+        "contextFallback": {
+            "status": context_fallback_latest.get("status") if context_fallback_latest else None,
+            "finishedAt": context_fallback_latest.get("finishedAt") if context_fallback_latest else None,
+            "ageSeconds": age_seconds(context_fallback_latest.get("finishedAt")) if context_fallback_latest else None,
+            "conversationTurn2ContextMode": context_fallback_latest.get("conversationTurn2ContextMode")
+            if context_fallback_latest
+            else None,
+            "conversationTurn3ContextMode": context_fallback_latest.get("conversationTurn3ContextMode")
+            if context_fallback_latest
+            else None,
+            "resumeTurn2ContextMode": context_fallback_latest.get("resumeTurn2ContextMode")
+            if context_fallback_latest
+            else None,
+            "recentFailCount": recent_context_fallback_failures,
+            "skippedCount": context_fallback_skipped,
         },
         "humanWhatsapp": {
             "status": human_whatsapp_latest.get("status") if human_whatsapp_latest else None,
@@ -270,7 +298,7 @@ def main() -> int:
     else:
         print(
             "ops status={status} selftest={selftest_status}/{selftest_mode} intelligence={intelligence_status} "
-            "whatsappTransport={whatsapp_transport_status} recovery={recovery_status} "
+            "whatsappTransport={whatsapp_transport_status} recovery={recovery_status} contextFallback={context_fallback_status} "
             "humanWhatsapp={human_status} humanConversation={human_conversation_status} "
             "humanResume={human_resume_status} humanResumeFailure={human_resume_failure_status} stressRecovery={stress_status}".format(
                 status=result["status"],
@@ -279,6 +307,7 @@ def main() -> int:
                 intelligence_status=result["intelligence"]["status"],
                 whatsapp_transport_status=result["whatsappTransport"]["status"],
                 recovery_status=result["recovery"]["status"],
+                context_fallback_status=result["contextFallback"]["status"],
                 human_status=result["humanWhatsapp"]["status"],
                 human_conversation_status=result["humanWhatsappConversation"]["status"],
                 human_resume_status=result["humanWhatsappResume"]["status"],
@@ -319,8 +348,16 @@ def main() -> int:
                     reason=result["qwenSessionsProbe"]["reason"],
                 )
             )
+        if result["contextFallback"]["status"]:
+            print(
+                "contextFallback conversationTurn2={conversation_turn2} conversationTurn3={conversation_turn3} resumeTurn2={resume_turn2}".format(
+                    conversation_turn2=result["contextFallback"]["conversationTurn2ContextMode"],
+                    conversation_turn3=result["contextFallback"]["conversationTurn3ContextMode"],
+                    resume_turn2=result["contextFallback"]["resumeTurn2ContextMode"],
+                )
+            )
         print(
-            "ages selftest={selftest_age} intelligence={intelligence_age} recovery={recovery_age} "
+            "ages selftest={selftest_age} intelligence={intelligence_age} recovery={recovery_age} contextFallback={context_fallback_age} "
             "whatsappTransport={whatsapp_transport_age} qwenSessionsProbe={qwen_probe_age} humanWhatsapp={human_age} "
             "humanConversation={human_conversation_age} humanResume={human_resume_age} "
             "humanResumeFailure={human_resume_failure_age} stressRecovery={stress_age}".format(
@@ -329,6 +366,7 @@ def main() -> int:
                 whatsapp_transport_age=result["whatsappTransport"]["ageSeconds"],
                 qwen_probe_age=result["qwenSessionsProbe"]["ageSeconds"],
                 recovery_age=result["recovery"]["ageSeconds"],
+                context_fallback_age=result["contextFallback"]["ageSeconds"],
                 human_age=result["humanWhatsapp"]["ageSeconds"],
                 human_conversation_age=result["humanWhatsappConversation"]["ageSeconds"],
                 human_resume_age=result["humanWhatsappResume"]["ageSeconds"],

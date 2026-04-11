@@ -191,3 +191,6 @@ selftest-summary.json
 .local-agent-stress-recovery-smoke.*/
 .local-agent-stress-recovery-smoke/
 .local-agent-last-stress-recovery-smoke.json
+.local-agent-context-fallback-smoke.*/
+.local-agent-context-fallback-smoke/
+.local-agent-last-context-fallback-smoke.json

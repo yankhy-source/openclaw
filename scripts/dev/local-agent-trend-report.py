@@ -23,6 +23,9 @@ from local_agent_run_history import (
 def build_result(repo_root: Path, window: int) -> dict:
     intelligence_base = Path(os.environ.get("OPENCLAW_INTELLIGENCE_LOOP_BASE", repo_root / ".local-agent-intelligence-loop"))
     recovery_base = Path(os.environ.get("OPENCLAW_RECOVERY_SMOKE_BASE", repo_root / ".local-agent-recovery-smoke"))
+    context_fallback_base = Path(
+        os.environ.get("OPENCLAW_CONTEXT_FALLBACK_SMOKE_BASE", repo_root / ".local-agent-context-fallback-smoke")
+    )
     human_whatsapp_base = Path(os.environ.get("OPENCLAW_HUMAN_WHATSAPP_EVAL_BASE", repo_root / ".local-human-whatsapp-eval"))
     human_whatsapp_conversation_base = Path(
         os.environ.get(
@@ -58,6 +61,7 @@ def build_result(repo_root: Path, window: int) -> dict:
 
     intelligence_runs, intelligence_skipped = load_run_summaries(intelligence_base, "intelligence")
     recovery_runs, recovery_skipped = load_run_summaries(recovery_base, "recovery")
+    context_fallback_runs, context_fallback_skipped = load_run_summaries(context_fallback_base, "context_fallback")
     human_whatsapp_runs, human_whatsapp_skipped = load_run_summaries(human_whatsapp_base, "human_whatsapp")
     human_whatsapp_conversation_runs, human_whatsapp_conversation_skipped = load_run_summaries(
         human_whatsapp_conversation_base,
@@ -78,6 +82,7 @@ def build_result(repo_root: Path, window: int) -> dict:
 
     intelligence = summarize_window(intelligence_runs, window, intelligence_skipped)
     recovery = summarize_window(recovery_runs, window, recovery_skipped)
+    context_fallback = summarize_window(context_fallback_runs, window, context_fallback_skipped)
     human_whatsapp = summarize_window(human_whatsapp_runs, window, human_whatsapp_skipped)
     human_whatsapp_conversation = summarize_window(
         human_whatsapp_conversation_runs,
@@ -115,6 +120,10 @@ def build_result(repo_root: Path, window: int) -> dict:
         problems.append("no recovery-smoke history")
     elif recovery["latest"].get("status") != "passed":
         problems.append(latest_problem("recovery smoke", recovery["latest"]))
+    if context_fallback["latest"] is None:
+        problems.append("no context-fallback history")
+    elif context_fallback["latest"].get("status") != "passed":
+        problems.append(latest_problem("context fallback smoke", context_fallback["latest"]))
     if human_whatsapp["latest"] is None:
         problems.append("no human-whatsapp history")
     elif human_whatsapp["latest"].get("status") != "passed":
@@ -135,6 +144,8 @@ def build_result(repo_root: Path, window: int) -> dict:
         warnings.append("recent intelligence-loop history contains non-passed runs")
     if recovery["failCount"] > 0:
         warnings.append("recent recovery-smoke history contains non-passed runs")
+    if context_fallback["failCount"] > 0:
+        warnings.append("recent context-fallback history contains non-passed runs")
     if human_whatsapp["failCount"] > 0:
         warnings.append("recent human-whatsapp history contains non-passed runs")
     if human_whatsapp_conversation["failCount"] > 0:
@@ -177,6 +188,7 @@ def build_result(repo_root: Path, window: int) -> dict:
         },
         "intelligence": intelligence,
         "recovery": recovery,
+        "contextFallback": context_fallback,
         "humanWhatsapp": human_whatsapp,
         "humanWhatsappConversation": human_whatsapp_conversation,
         "humanWhatsappResume": human_whatsapp_resume,
@@ -205,13 +217,14 @@ def main() -> int:
     else:
         intelligence = result["intelligence"]
         recovery = result["recovery"]
+        context_fallback = result["contextFallback"]
         human_whatsapp = result["humanWhatsapp"]
         human_whatsapp_conversation = result["humanWhatsappConversation"]
         human_whatsapp_resume = result["humanWhatsappResume"]
         human_whatsapp_resume_failure = result["humanWhatsappResumeFailure"]
         print(
             "trend status={status} window={window} selftest={selftest_status}/{selftest_mode} "
-            "whatsappTransport={whatsapp_transport_status} intelligenceLatest={intelligence_latest} recoveryLatest={recovery_latest} "
+            "whatsappTransport={whatsapp_transport_status} intelligenceLatest={intelligence_latest} recoveryLatest={recovery_latest} contextFallbackLatest={context_fallback_latest} "
             "humanWhatsappLatest={human_latest} humanConversationLatest={human_conversation_latest} "
             "humanResumeLatest={human_resume_latest} humanResumeFailureLatest={human_resume_failure_latest}".format(
                 status=result["status"],
@@ -221,6 +234,7 @@ def main() -> int:
                 whatsapp_transport_status=result["whatsappTransport"]["status"],
                 intelligence_latest=(intelligence["latest"] or {}).get("status"),
                 recovery_latest=(recovery["latest"] or {}).get("status"),
+                context_fallback_latest=(context_fallback["latest"] or {}).get("status"),
                 human_latest=(human_whatsapp["latest"] or {}).get("status"),
                 human_conversation_latest=(human_whatsapp_conversation["latest"] or {}).get("status"),
                 human_resume_latest=(human_whatsapp_resume["latest"] or {}).get("status"),
@@ -257,6 +271,14 @@ def main() -> int:
         )
         print(
             f"recovery passCount={recovery['passCount']} failCount={recovery['failCount']} total={recovery['count']} skipped={recovery['skippedCount']}"
+        )
+        print(
+            "contextFallback passCount={pass_count} failCount={fail_count} total={total} skipped={skipped}".format(
+                pass_count=context_fallback["passCount"],
+                fail_count=context_fallback["failCount"],
+                total=context_fallback["count"],
+                skipped=context_fallback["skippedCount"],
+            )
         )
         print(
             f"humanWhatsapp passCount={human_whatsapp['passCount']} failCount={human_whatsapp['failCount']} total={human_whatsapp['count']} skipped={human_whatsapp['skippedCount']}"

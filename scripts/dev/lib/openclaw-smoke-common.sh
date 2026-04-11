@@ -353,6 +353,53 @@ if errors:
 PY
 }
 
+apply_whatsapp_run_context_fault() {
+  local context_path="$1"
+  local fault="$2"
+  if [[ -z "$fault" || "$fault" == "none" ]]; then
+    return 0
+  fi
+  python3 - <<'PY' "$context_path" "$fault"
+import json
+import sys
+from pathlib import Path
+
+context_path = Path(sys.argv[1])
+fault = sys.argv[2]
+if not context_path.is_file():
+    raise SystemExit(f"missing WhatsApp context file for fault injection: {context_path}")
+
+payload = json.loads(context_path.read_text(encoding="utf-8"))
+
+if fault == "whatsapp_token_mismatch":
+    payload["whatsappToken"] = "WA_SELFTEST_0000000000"
+elif fault == "manager_session_mismatch":
+    payload["managerSessionId"] = "local-selftest-forced-mismatch"
+elif fault == "marker_invalid":
+    if "marker" in payload:
+        payload["marker"] = "marker-invalid"
+    elif "resumeMarker" in payload:
+        payload["resumeMarker"] = "marker-invalid"
+    else:
+        raise SystemExit(f"context fault {fault!r} requires marker or resumeMarker in {context_path}")
+elif fault == "session_key_invalid":
+    if "sessionKey" in payload:
+        payload["sessionKey"] = "session:invalid"
+    elif "sourceSessionKey" in payload:
+        payload["sourceSessionKey"] = "session:invalid"
+    else:
+        raise SystemExit(f"context fault {fault!r} requires sessionKey/sourceSessionKey in {context_path}")
+elif fault == "turn_path_missing":
+    if "turn1Path" not in payload:
+        raise SystemExit(f"context fault {fault!r} requires turn1Path in {context_path}")
+    payload["turn1Path"] = str(context_path.parent / "missing-turn1.json")
+else:
+    raise SystemExit(f"unsupported WhatsApp context fault: {fault}")
+
+context_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+PY
+}
+
 agent_json_indicates_missing_tool() {
   local json_path="$1"
   local tool_name="$2"

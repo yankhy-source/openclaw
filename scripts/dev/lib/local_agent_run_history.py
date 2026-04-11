@@ -153,6 +153,7 @@ def is_incomplete_run(kind: str, payload: dict[str, Any]) -> bool:
             and payload.get("humanWhatsappConversationStatus") in (None, "passed")
             and payload.get("humanWhatsappResumeStatus") in (None, "passed")
             and payload.get("humanWhatsappResumeFailureStatus") in (None, "passed")
+            and payload.get("contextFallbackSmokeStatus") in (None, "passed")
             and not payload.get("reviewText")
             and not payload.get("nextUpgrade")
         )
