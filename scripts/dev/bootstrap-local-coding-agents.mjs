@@ -30,6 +30,10 @@ const specialistModel = {
   primary: mainPrimaryModel,
   fallbacks: [...mainFallbackModels],
 };
+const strictCodexModel = {
+  primary: mainPrimaryModel,
+  fallbacks: [],
+};
 const qwenProbeModel = {
   primary: qwenProbePrimaryModel,
   fallbacks: [],
@@ -516,13 +520,13 @@ function mutateConfig(config) {
       name: "OpenClaw Human Source",
       workspace: repoRoot,
       model: {
-        primary: specialistModel.primary,
-        fallbacks: [...specialistModel.fallbacks],
+        primary: strictCodexModel.primary,
+        fallbacks: [...strictCodexModel.fallbacks],
       },
       skills: ["main-tool-discipline", "main-human-operator", "session-logs"],
       identity: {
         name: "OpenClaw Human Source",
-        theme: "Fresh source context for recovery reconstruction tests",
+        theme: "Fresh source context for recovery reconstruction tests on codex-only runtime",
         emoji: "🧩",
       },
       tools: {
@@ -540,13 +544,13 @@ function mutateConfig(config) {
       name: "OpenClaw Human Recovery",
       workspace: repoRoot,
       model: {
-        primary: specialistModel.primary,
-        fallbacks: [...specialistModel.fallbacks],
+        primary: strictCodexModel.primary,
+        fallbacks: [...strictCodexModel.fallbacks],
       },
       skills: ["main-tool-discipline", "main-human-operator", "session-logs"],
       identity: {
         name: "OpenClaw Human Recovery",
-        theme: "Fresh recovery-only reconstruction over session history",
+        theme: "Fresh recovery-only reconstruction over session history on codex-only runtime",
         emoji: "🧷",
       },
       tools: {

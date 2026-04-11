@@ -63,6 +63,23 @@ else
     echo "main orchestrator smoke blocked: qwen-portal auth expired or invalid; re-authenticate with openclaw models auth login --provider qwen-portal" >&2
     exit 2
   fi
+  if [[ -f "$MAIN_JSON" ]]; then
+    provider="$(agent_json_meta_field "$MAIN_JSON" provider || true)"
+    model="$(agent_json_meta_field "$MAIN_JSON" model || true)"
+    session_error="$(agent_json_session_error_message "$MAIN_JSON" "$SELFTEST_MANAGER_ID" || true)"
+    if [[ "$session_error" == *"usage limit"* ]]; then
+      echo "main orchestrator smoke blocked: ${provider:-unknown}/${model:-unknown} hit a ChatGPT usage limit (${session_error})" >&2
+      exit 2
+    fi
+    if [[ "$session_error" == *"current quota"* ]]; then
+      echo "main orchestrator smoke blocked: ${provider:-unknown}/${model:-unknown} exceeded API quota (${session_error})" >&2
+      exit 2
+    fi
+    if [[ "$session_error" == *"requested model"* && "$session_error" == *"does not exist"* ]]; then
+      echo "main orchestrator smoke blocked: ${provider:-unknown}/${model:-unknown} is not available on this runtime (${session_error})" >&2
+      exit 2
+    fi
+  fi
   exit "$smoke_status"
 fi
 if [[ -z "$MAIN_SESSION" || ! -f "$MAIN_SESSION" ]]; then

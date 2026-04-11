@@ -194,3 +194,6 @@ selftest-summary.json
 .local-agent-context-fallback-smoke.*/
 .local-agent-context-fallback-smoke/
 .local-agent-last-context-fallback-smoke.json
+.local-agent-context-report-audit.*/
+.local-agent-context-report-audit/
+.local-agent-last-context-report-audit.json

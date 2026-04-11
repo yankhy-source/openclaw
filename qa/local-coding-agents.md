@@ -337,11 +337,13 @@ command, so `claw-code-local summary` is not a stable probe.
 - the status proof uses a run-specific copied summary file, so the live check cannot pass purely from remembered prior state
 - the run writes a consistency report for the status context, so the summary records whether token/session binding passed cleanly before the user-facing answer was sent
 - that consistency report now also carries `decisionSource`, `decisionReason`, `expectedSummary`, `actualSummary`, `deviationSummary`, a compact `causeLine`, and a fixed user-facing report template for every run (`erwartet=...; tatsaechlich=...; abweichung=...; quelle=...`), so fallback reasons are visible without opening raw snapshots
+- the dedicated context-report audit bundles those green-path reports together with the forced mismatch reports, so operators and the evaluator can compare the same fixed report template side by side
 
 ## What the Intelligence Loop Verifies
 
 - the local human eval, live WhatsApp human eval, deeper WhatsApp conversation eval, interruption/resume eval, lost-context resume-failure eval, and forced context-fallback smoke all pass in the same cycle
-- a separate evaluator agent reads all six summaries plus the live selftest summary
+- the context-report audit proves that green-path and forced-fallback runs both expose the same fixed `erwartet/tatsaechlich/abweichung/quelle` report shape
+- a separate evaluator agent reads all six summaries, the context-report audit, and the live selftest summary
 - the evaluator writes a concise intelligence review and one focused next upgrade step
 - the review avoids leaking internal paths, JSON field names, or harness labels
 - the loop leaves behind a stable machine-readable summary for the latest full cycle

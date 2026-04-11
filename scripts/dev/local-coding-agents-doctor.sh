@@ -206,6 +206,8 @@ if isinstance(config, dict):
         "claw-code": {"workspace": str(parity_root), "model": main_primary_model, "fallbacks": main_fallbacks},
         "oc-human-main": {"workspace": str(repo_root), "model": main_primary_model, "fallbacks": main_fallbacks, "subagents_model": main_primary_model, "allow_agents": ["oc-human-builder"]},
         "oc-human-builder": {"workspace": str(repo_root), "model": main_primary_model, "fallbacks": main_fallbacks},
+        "oc-human-source": {"workspace": str(repo_root), "model": main_primary_model, "fallbacks": []},
+        "oc-human-recovery": {"workspace": str(repo_root), "model": main_primary_model, "fallbacks": []},
     }
     report["checks"]["agents"] = {}
     for agent_id, expected in expected_agents.items():

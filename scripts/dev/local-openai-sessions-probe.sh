@@ -152,6 +152,15 @@ PY
   if [[ -z "$PROBE_REASON" && -f "$OUTPUT_LOG" ]] && rg -q 'did not expose the sessions_spawn runtime tool' "$OUTPUT_LOG"; then
     PROBE_REASON="sessions_spawn_unavailable"
   fi
+  if [[ -z "$PROBE_REASON" && -f "$OUTPUT_LOG" ]] && rg -q 'usage limit' "$OUTPUT_LOG"; then
+    PROBE_REASON="chatgpt_usage_limit"
+  fi
+  if [[ -z "$PROBE_REASON" && -f "$OUTPUT_LOG" ]] && rg -q 'current quota' "$OUTPUT_LOG"; then
+    PROBE_REASON="api_quota_exceeded"
+  fi
+  if [[ -z "$PROBE_REASON" && -f "$OUTPUT_LOG" ]] && rg -q "requested model .* does not exist|Unknown model:" "$OUTPUT_LOG"; then
+    PROBE_REASON="model_unavailable"
+  fi
 }
 
 on_exit() {
@@ -160,7 +169,7 @@ on_exit() {
   finalize_probe_metadata
   if [[ "$PROBE_EXIT_CODE" -eq 0 ]]; then
     PROBE_STATUS="passed"
-  elif [[ "$PROBE_EXIT_CODE" -eq 2 ]]; then
+  elif [[ "$PROBE_EXIT_CODE" -eq 2 || "$PROBE_REASON" == "chatgpt_usage_limit" || "$PROBE_REASON" == "api_quota_exceeded" || "$PROBE_REASON" == "model_unavailable" ]]; then
     PROBE_STATUS="blocked"
   fi
   if [[ "$PROBE_EXIT_CODE" -ne 0 && -z "$PROBE_FAILED_COMMAND" ]]; then

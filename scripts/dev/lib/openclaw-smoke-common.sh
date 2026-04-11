@@ -90,7 +90,11 @@ PY
 
 json_payload_empty_text_summary() {
   local json_path="$1"
-  python3 - <<'PY' "$json_path"
+  local agent_id="${2:-}"
+  local summary=""
+  local session_error=""
+
+  summary="$(python3 - <<'PY' "$json_path"
 import json, sys
 from pathlib import Path
 
@@ -137,6 +141,16 @@ print(
 )
 raise SystemExit(0)
 PY
+)" || return 1
+
+  if [[ -n "$agent_id" ]]; then
+    session_error="$(agent_json_session_error_message "$json_path" "$agent_id" || true)"
+  fi
+  if [[ -n "$session_error" ]]; then
+    printf '%s errorMessage=%s\n' "$summary" "$session_error"
+  else
+    printf '%s\n' "$summary"
+  fi
 }
 
 agent_json_meta_field() {
@@ -177,6 +191,79 @@ value = payload.get("meta", {}).get("agentMeta", {}).get(field)
 if value is None:
     raise SystemExit(1)
 print(value)
+PY
+}
+
+agent_json_session_error_message() {
+  local json_path="$1"
+  local agent_id="$2"
+  local state_dir="${3:-$STATE_DIR}"
+  python3 - <<'PY' "$json_path" "$agent_id" "$state_dir"
+import json
+import sys
+from pathlib import Path
+
+json_path = Path(sys.argv[1])
+agent_id = sys.argv[2]
+state_dir = Path(sys.argv[3])
+raw = json_path.read_text(encoding="utf-8")
+decoder = json.JSONDecoder()
+payload = None
+
+def result_payload(candidate):
+    if not isinstance(candidate, dict):
+        return None
+    if isinstance(candidate.get("result"), dict):
+        return candidate["result"]
+    if isinstance(candidate.get("payloads"), list):
+        return candidate
+    return None
+
+for index, char in enumerate(raw):
+    if char != "{":
+        continue
+    try:
+        candidate, _ = decoder.raw_decode(raw[index:])
+    except json.JSONDecodeError:
+        continue
+    result = result_payload(candidate)
+    if result is not None:
+        payload = result
+
+if payload is None:
+    raise SystemExit(1)
+
+session_id = payload.get("meta", {}).get("agentMeta", {}).get("sessionId")
+if not isinstance(session_id, str) or not session_id:
+    raise SystemExit(1)
+
+session_path = state_dir / "agents" / agent_id / "sessions" / f"{session_id}.jsonl"
+if not session_path.is_file():
+    raise SystemExit(1)
+
+last_error = None
+with session_path.open("r", encoding="utf-8", errors="replace") as handle:
+    for line in handle:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        message = event.get("message")
+        if not isinstance(message, dict):
+            continue
+        if message.get("role") != "assistant":
+            continue
+        error_message = message.get("errorMessage")
+        if isinstance(error_message, str) and error_message.strip():
+            last_error = " ".join(error_message.split())
+
+if not last_error:
+    raise SystemExit(1)
+
+print(last_error)
 PY
 }
 
@@ -956,17 +1043,26 @@ run_openclaw_agent_json() {
   local attempts="${OPENCLAW_SELFTEST_AGENT_RETRIES:-3}"
   local delay="${OPENCLAW_SELFTEST_AGENT_RETRY_DELAY:-2}"
   local timeout_seconds="${OPENCLAW_SELFTEST_AGENT_TIMEOUT_SECONDS:-240}"
+  local empty_payload_retry_providers="${OPENCLAW_SELFTEST_EMPTY_PAYLOAD_RETRY_PROVIDERS:-openai-codex,openai}"
   local attempt
   local tmp_output
   local status
   local args=("$@")
   local has_timeout=0
+  local agent_id=""
+  local provider=""
 
   for ((attempt = 0; attempt < ${#args[@]}; attempt++)); do
-    if [[ "${args[$attempt]}" == "--timeout" ]]; then
-      has_timeout=1
-      break
-    fi
+    case "${args[$attempt]}" in
+      --timeout)
+        has_timeout=1
+        ;;
+      --agent)
+        if (( attempt + 1 < ${#args[@]} )); then
+          agent_id="${args[$((attempt + 1))]}"
+        fi
+        ;;
+    esac
   done
 
   for attempt in $(seq 1 "$attempts"); do
@@ -988,7 +1084,14 @@ run_openclaw_agent_json() {
       continue
     fi
 
-    if json_payload_empty_text_summary "$tmp_output" >&2; then
+    if json_payload_empty_text_summary "$tmp_output" "$agent_id" >/dev/null 2>&1; then
+      provider="$(agent_json_meta_field "$tmp_output" provider || true)"
+      if [[ "$attempt" -lt "$attempts" && -n "$provider" && ",$empty_payload_retry_providers," == *",$provider,"* ]]; then
+        rm -f "$tmp_output"
+        sleep "$delay"
+        continue
+      fi
+      json_payload_empty_text_summary "$tmp_output" "$agent_id" >&2
       mv "$tmp_output" "$output_path"
     else
       mv "$tmp_output" "$output_path"
