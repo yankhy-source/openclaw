@@ -10,6 +10,23 @@ const PLAYGROUND_ROOT = process.env.OPENCLAW_PROJECT_SCOUT_ROOT_A || path.join(H
 const WORKSPACE_ROOT = process.env.OPENCLAW_PROJECT_SCOUT_ROOT_B || path.join(HOME_DIR, ".openclaw", "workspace");
 const MEMORY_ROOT = path.join(PLAYGROUND_ROOT, "memory");
 const OPENCLAW_LOCAL_AGENTS_ROOT = path.join(PLAYGROUND_ROOT, "openclaw-local-agents");
+const LAST_SELFTEST_SUMMARY_PATH = path.join(OPENCLAW_LOCAL_AGENTS_ROOT, ".local-agent-last-selftest.json");
+const LAST_TRANSPORT_SUMMARY_PATH = path.join(
+  OPENCLAW_LOCAL_AGENTS_ROOT,
+  ".local-agent-last-whatsapp-transport-smoke.json",
+);
+const LAST_PROJECT_SCOUT_SUMMARY_PATH = path.join(
+  OPENCLAW_LOCAL_AGENTS_ROOT,
+  ".local-agent-last-human-project-scout-eval.json",
+);
+const LAST_OPENAI_PROBE_SUMMARY_PATH = path.join(
+  OPENCLAW_LOCAL_AGENTS_ROOT,
+  ".local-agent-last-openai-sessions-probe.json",
+);
+const LAST_QWEN_PROBE_SUMMARY_PATH = path.join(
+  OPENCLAW_LOCAL_AGENTS_ROOT,
+  ".local-agent-last-qwen-sessions-probe.json",
+);
 
 const KNOWN_PROJECTS = [
   "openclaw-local-agents",
@@ -83,6 +100,9 @@ function buildProjectScoutReply(params) {
 
   if (matchesWorkSummaryIntent(cleanedBody)) {
     return buildWorkSummaryReply();
+  }
+  if (matchesCurrentStatusIntent(cleanedBody)) {
+    return buildCurrentStatusReply();
   }
   if (!matchesProjectScoutIntent(cleanedBody)) {
     return "";
@@ -162,6 +182,18 @@ function matchesWorkSummaryIntent(cleanedBody) {
   );
 }
 
+function matchesCurrentStatusIntent(cleanedBody) {
+  if (!cleanedBody) {
+    return false;
+  }
+  return (
+    /(was machen wir|was machen wir grade|was machen wir gerade|was geht ab|was eht ab|status|woran sind wir|wo stehen wir|was laeuft gerade|was passiert gerade|was ist der stand)/.test(
+      cleanedBody,
+    ) &&
+    !/(welche projekte|meine projekte|auf meinen mac|auf meinem mac)/.test(cleanedBody)
+  );
+}
+
 function buildWorkSummaryReply() {
   const cards = collectRecentWorkCards();
   if (cards.length < 2) {
@@ -196,6 +228,44 @@ function collectRecentWorkCards() {
   }
 
   return cards;
+}
+
+function buildCurrentStatusReply() {
+  const lines = [];
+
+  const selftest = readJsonFile(LAST_SELFTEST_SUMMARY_PATH);
+  if (selftest && selftest.status === "passed") {
+    lines.push(
+      `- Agent-Stand - letzter Live-Selftest ist ${String(selftest.status)}; der lokale Agent-Pfad steht auf ${String(selftest.mode || "live")} und die Kernschritte liefen durch.`,
+    );
+  }
+
+  const transport = readJsonFile(LAST_TRANSPORT_SUMMARY_PATH);
+  const projectScoutEval = readJsonFile(LAST_PROJECT_SCOUT_SUMMARY_PATH);
+  if (transport && transport.status === "passed" && projectScoutEval && projectScoutEval.status === "passed") {
+    lines.push(
+      "- WhatsApp-Pfad - Transport-Smoke und Project-Scout-Eval sind gruen; die deterministischen Antworten fuer Projekte und Arbeitsstand sind lokal geladen.",
+    );
+  } else if (transport && transport.status === "passed") {
+    lines.push("- WhatsApp-Pfad - Transport-Smoke ist gruen; der Kanal ist lokal erreichbar und antwortet.");
+  }
+
+  const blockers = collectCurrentBlockers();
+  if (blockers.length > 0) {
+    lines.push(`- Aktueller Blocker - ${blockers.join("; ")}.`);
+  }
+
+  const recentWork = collectRecentWorkCards()[0];
+  if (lines.length < 3 && recentWork) {
+    lines.push(`- Letzter harter Fix - ${recentWork.summary}`);
+  }
+
+  while (lines.length < 3) {
+    lines.push("- Status - lokaler Agent wird gerade weiter auf deterministic replies und stabilere WhatsApp-Antworten gehoben.");
+  }
+
+  lines.push("- Soll ich als Naechstes den Live-WhatsApp-Stand, den naechsten Blocker oder die Antwortqualitaet weiter schaerfen?");
+  return lines.slice(0, 4).join("\n");
 }
 
 function collectTodayCommitCards() {
@@ -325,6 +395,32 @@ function collectMemoryStatusCard() {
 function currentDayFileName() {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}.md`;
+}
+
+function collectCurrentBlockers() {
+  const blockers = [];
+  const openaiProbe = readJsonFile(LAST_OPENAI_PROBE_SUMMARY_PATH);
+  const qwenProbe = readJsonFile(LAST_QWEN_PROBE_SUMMARY_PATH);
+
+  if (openaiProbe && openaiProbe.status === "blocked") {
+    blockers.push(
+      `OpenAI-Probe blockiert auf ${String(openaiProbe.reason || "unbekannt")}`,
+    );
+  }
+  if (qwenProbe && qwenProbe.status === "blocked") {
+    blockers.push(
+      `Qwen-Probe blockiert auf ${String(qwenProbe.reason || "unbekannt")}`,
+    );
+  }
+  return blockers.slice(0, 2);
+}
+
+function readJsonFile(filePath) {
+  try {
+    return JSON.parse(fs.readFileSync(filePath, "utf8"));
+  } catch {
+    return null;
+  }
 }
 
 function collectProjectCards() {

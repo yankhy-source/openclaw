@@ -80,6 +80,31 @@ const workReplyResult = await beforeAgentReplyHandler(
   },
 );
 
+const statusPrompt = "Was machen wir gerade hier, was geht ab, was ist der Stand";
+const statusDispatchResult = await beforeDispatchHandler(
+  {
+    content: statusPrompt,
+    body: statusPrompt,
+    channel: "whatsapp",
+    sessionKey: "agent:main:whatsapp:direct:+4917623606147",
+  },
+  {
+    channelId: "whatsapp",
+    conversationId: "+4917623606147",
+    sessionKey: "agent:main:whatsapp:direct:+4917623606147",
+    senderId: "+4917623606147",
+  },
+);
+const statusReplyResult = await beforeAgentReplyHandler(
+  {
+    cleanedBody: statusPrompt,
+  },
+  {
+    agentId: "main",
+    sessionKey: "agent:main:whatsapp:direct:+4917623606147",
+  },
+);
+
 const dispatchText = assertProjectReply("before_dispatch(project)", projectDispatchResult?.text);
 const replyText = assertProjectReply("before_agent_reply(project)", projectReplyResult?.reply?.text);
 assert.equal(replyText, dispatchText, "before_dispatch and before_agent_reply should agree for project prompts");
@@ -87,6 +112,10 @@ assert.equal(replyText, dispatchText, "before_dispatch and before_agent_reply sh
 const workDispatchText = assertWorkReply("before_dispatch(work)", workDispatchResult?.text);
 const workReplyText = assertWorkReply("before_agent_reply(work)", workReplyResult?.reply?.text);
 assert.equal(workReplyText, workDispatchText, "before_dispatch and before_agent_reply should agree for work prompts");
+
+const statusDispatchText = assertStatusReply("before_dispatch(status)", statusDispatchResult?.text);
+const statusReplyText = assertStatusReply("before_agent_reply(status)", statusReplyResult?.reply?.text);
+assert.equal(statusReplyText, statusDispatchText, "before_dispatch and before_agent_reply should agree for status prompts");
 
 console.log(
   JSON.stringify(
@@ -97,6 +126,8 @@ console.log(
       projectReplyText: replyText,
       workDispatchText,
       workReplyText,
+      statusDispatchText,
+      statusReplyText,
     },
     null,
     2,
@@ -139,6 +170,21 @@ function assertWorkReply(label, rawText) {
   assert(
     /(projekt-scout|whatsapp|eval|fallback|reply-pfad|guardrail)/i.test(text),
     `${label}: expected concrete work markers in work summary: ${text}`,
+  );
+  return text;
+}
+
+function assertStatusReply(label, rawText) {
+  assert.equal(typeof rawText, "string", `${label} hook did not return a text reply`);
+  const text = rawText.trim();
+  const lines = text.split(/\r?\n/).filter(Boolean);
+  assert.equal(lines.length, 4, `${label}: expected 4 bullet lines, got ${lines.length}`);
+  assert(lines.every((line) => line.startsWith("- ")), `${label}: reply must use plain bullets: ${text}`);
+  assert(/Agent-Stand/i.test(text), `${label}: expected Agent-Stand marker: ${text}`);
+  assert(/WhatsApp-Pfad/i.test(text), `${label}: expected WhatsApp-Pfad marker: ${text}`);
+  assert(
+    /Aktueller Blocker|OpenAI-Probe|Qwen-Probe/i.test(text),
+    `${label}: expected blocker/probe marker: ${text}`,
   );
   return text;
 }
