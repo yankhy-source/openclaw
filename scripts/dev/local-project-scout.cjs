@@ -8,6 +8,8 @@ const { execFileSync } = require("node:child_process");
 const HOME_DIR = os.homedir();
 const PLAYGROUND_ROOT = process.env.OPENCLAW_PROJECT_SCOUT_ROOT_A || path.join(HOME_DIR, "Documents", "Playground");
 const WORKSPACE_ROOT = process.env.OPENCLAW_PROJECT_SCOUT_ROOT_B || path.join(HOME_DIR, ".openclaw", "workspace");
+const MEMORY_ROOT = path.join(PLAYGROUND_ROOT, "memory");
+const OPENCLAW_LOCAL_AGENTS_ROOT = path.join(PLAYGROUND_ROOT, "openclaw-local-agents");
 
 const KNOWN_PROJECTS = [
   "openclaw-local-agents",
@@ -75,6 +77,13 @@ function buildProjectScoutReply(params) {
     return "";
   }
   const cleanedBody = normalizeText(selectRelevantScoutText(params && params.texts));
+  if (!cleanedBody) {
+    return "";
+  }
+
+  if (matchesWorkSummaryIntent(cleanedBody)) {
+    return buildWorkSummaryReply();
+  }
   if (!matchesProjectScoutIntent(cleanedBody)) {
     return "";
   }
@@ -139,6 +148,183 @@ function matchesProjectScoutIntent(cleanedBody) {
     ) &&
     /(projekt|projekte|repo|repos|mac|workspace|lokal|local|playground|code)/.test(cleanedBody)
   );
+}
+
+function matchesWorkSummaryIntent(cleanedBody) {
+  if (!cleanedBody) {
+    return false;
+  }
+  return (
+    /(was hast du gearbeitet|was haben wir alles dran gearbeitet|woran haben wir gearbeitet|was haben wir heute gemacht|was hast du heute gemacht|heute gearbeitet)/.test(
+      cleanedBody,
+    ) &&
+    /(projekt|projekte|heute|dran gearbeitet|gearbeitet)/.test(cleanedBody)
+  );
+}
+
+function buildWorkSummaryReply() {
+  const cards = collectRecentWorkCards();
+  if (cards.length < 2) {
+    return "";
+  }
+  const selected = cards.slice(0, 3);
+  const lines = selected.map((card) => `- ${card.area} - ${card.summary}`);
+  lines.push("- Soll ich als Naechstes die echte WhatsApp-Antwort, Memory-Nutzung oder den naechsten Tool-Fix schaerfen?");
+  return lines.join("\n");
+}
+
+function collectRecentWorkCards() {
+  const seen = new Set();
+  const cards = [];
+
+  for (const card of collectTodayCommitCards()) {
+    const key = `${card.area}::${card.summary}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    cards.push(card);
+    seen.add(key);
+  }
+
+  const memoryCard = collectMemoryStatusCard();
+  if (memoryCard) {
+    const key = `${memoryCard.area}::${memoryCard.summary}`;
+    if (!seen.has(key)) {
+      cards.push(memoryCard);
+      seen.add(key);
+    }
+  }
+
+  return cards;
+}
+
+function collectTodayCommitCards() {
+  if (!isDirectory(OPENCLAW_LOCAL_AGENTS_ROOT)) {
+    return [];
+  }
+
+  const messages = readGitCommitMessages(OPENCLAW_LOCAL_AGENTS_ROOT);
+  return messages
+    .map((message) => mapCommitMessageToCard(message))
+    .filter(Boolean);
+}
+
+function readGitCommitMessages(repoPath) {
+  const dayStart = new Date();
+  dayStart.setHours(0, 0, 0, 0);
+  const isoDay = `${dayStart.getFullYear()}-${String(dayStart.getMonth() + 1).padStart(2, "0")}-${String(dayStart.getDate()).padStart(2, "0")}`;
+
+  const attempts = [
+    ["-C", repoPath, "log", "--since", `${isoDay} 00:00:00`, "--no-merges", "--pretty=%s", "-5"],
+    ["-C", repoPath, "log", "--no-merges", "--pretty=%s", "-5"],
+  ];
+
+  for (const args of attempts) {
+    try {
+      const output = execFileSync("git", args, {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+        timeout: 4000,
+      })
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+      if (output.length > 0) {
+        return output;
+      }
+    } catch {
+      continue;
+    }
+  }
+  return [];
+}
+
+function mapCommitMessageToCard(message) {
+  const normalized = normalizeText(message);
+  if (!normalized) {
+    return null;
+  }
+
+  const mappedSummary =
+    COMMIT_SUMMARY_MAP.find((entry) => normalized.includes(entry.match))?.summary ||
+    summarizeCommitMessage(message);
+
+  return {
+    area: "openclaw-local-agents",
+    summary: mappedSummary,
+  };
+}
+
+const COMMIT_SUMMARY_MAP = [
+  {
+    match: "intercept project scout earlier in reply pipeline",
+    summary:
+      "Projekt-Scout frueher im echten WhatsApp-Reply-Pfad abgefangen, damit Projektfragen nicht mehr an der 4B-Fallback-Antwort vorbeilaufen.",
+  },
+  {
+    match: "add local project scout guardrail for human agent",
+    summary:
+      "Deterministischen Projekt-Scout fuer den Human-Agent eingebaut, damit lokale Repo-Namen statt Halluzinationen zurueckkommen.",
+  },
+  {
+    match: "harden human eval and conversation fallbacks",
+    summary:
+      "Human-Evals und Gespraechs-Fallbacks gehaertet, damit WhatsApp-Antworten stabiler und konsistenter werden.",
+  },
+  {
+    match: "harden context audits and recovery blockers",
+    summary:
+      "Kontext-Audits und Recovery-Blocker gehaertet, damit Fehlerfaelle sauberer erkannt und gefixt werden.",
+  },
+  {
+    match: "standardize whatsapp context reports",
+    summary:
+      "WhatsApp-Kontextberichte vereinheitlicht, damit Status- und Team-Updates konsistent aus dem echten Lauf kommen.",
+  },
+];
+
+function summarizeCommitMessage(message) {
+  const trimmed = String(message || "").trim();
+  if (!trimmed) {
+    return "";
+  }
+  const compact = trimmed.replace(/\s+/g, " ");
+  if (compact.length <= 120) {
+    return compact;
+  }
+  return `${compact.slice(0, 117).trimEnd()}...`;
+}
+
+function collectMemoryStatusCard() {
+  const memoryPath = path.join(MEMORY_ROOT, currentDayFileName());
+  if (!fs.existsSync(memoryPath)) {
+    return null;
+  }
+  try {
+    const content = fs.readFileSync(memoryPath, "utf8");
+    if (/project-scout-eval.*passed|hookcount=2|hookCount=2/i.test(content)) {
+      return {
+        area: "WhatsApp-Localtests",
+        summary:
+          "Projekt-Scout-Eval lokal gruen, Plugin geladen und der Guardrail aktuell mit zwei Hook-Punkten aktiv.",
+      };
+    }
+    if (/intelligence-loop.*passed|ops-status.*ok|trend.*ok/i.test(content)) {
+      return {
+        area: "WhatsApp-Localtests",
+        summary:
+          "Intelligence-Loop, Ops-Status und Trend lagen zuletzt auf gruen oder ok, der Live-Pfad ist also lokal wieder stabiler.",
+      };
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function currentDayFileName() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}.md`;
 }
 
 function collectProjectCards() {

@@ -29,12 +29,12 @@ plugin.register({
 assert.equal(typeof beforeDispatchHandler, "function", "before_dispatch hook was not registered");
 assert.equal(typeof beforeAgentReplyHandler, "function", "before_agent_reply hook was not registered");
 
-const prompt =
+const projectPrompt =
   "Ich bin der Nutzer. Schau jetzt aktiv auf meinen Mac und sage mir, welche Projekte hier gerade relevant sind.";
-const dispatchResult = await beforeDispatchHandler(
+const projectDispatchResult = await beforeDispatchHandler(
   {
-    content: prompt,
-    body: prompt,
+    content: projectPrompt,
+    body: projectPrompt,
     channel: "whatsapp",
     sessionKey: "agent:main:whatsapp:direct:+4917623606147",
   },
@@ -45,9 +45,9 @@ const dispatchResult = await beforeDispatchHandler(
     senderId: "+4917623606147",
   },
 );
-const replyResult = await beforeAgentReplyHandler(
+const projectReplyResult = await beforeAgentReplyHandler(
   {
-    cleanedBody: prompt,
+    cleanedBody: projectPrompt,
   },
   {
     agentId: "main",
@@ -55,24 +55,55 @@ const replyResult = await beforeAgentReplyHandler(
   },
 );
 
-const dispatchText = assertScoutReply("before_dispatch", dispatchResult?.text);
-const replyText = assertScoutReply("before_agent_reply", replyResult?.reply?.text);
-assert.equal(replyText, dispatchText, "before_dispatch and before_agent_reply should agree");
+const workPrompt = "Was hast du gearbeitet heute an meine Projekte";
+const workDispatchResult = await beforeDispatchHandler(
+  {
+    content: workPrompt,
+    body: workPrompt,
+    channel: "whatsapp",
+    sessionKey: "agent:main:whatsapp:direct:+4917623606147",
+  },
+  {
+    channelId: "whatsapp",
+    conversationId: "+4917623606147",
+    sessionKey: "agent:main:whatsapp:direct:+4917623606147",
+    senderId: "+4917623606147",
+  },
+);
+const workReplyResult = await beforeAgentReplyHandler(
+  {
+    cleanedBody: workPrompt,
+  },
+  {
+    agentId: "main",
+    sessionKey: "agent:main:whatsapp:direct:+4917623606147",
+  },
+);
+
+const dispatchText = assertProjectReply("before_dispatch(project)", projectDispatchResult?.text);
+const replyText = assertProjectReply("before_agent_reply(project)", projectReplyResult?.reply?.text);
+assert.equal(replyText, dispatchText, "before_dispatch and before_agent_reply should agree for project prompts");
+
+const workDispatchText = assertWorkReply("before_dispatch(work)", workDispatchResult?.text);
+const workReplyText = assertWorkReply("before_agent_reply(work)", workReplyResult?.reply?.text);
+assert.equal(workReplyText, workDispatchText, "before_dispatch and before_agent_reply should agree for work prompts");
 
 console.log(
   JSON.stringify(
     {
       status: "passed",
       pluginPath,
-      dispatchText,
-      replyText,
+      projectDispatchText: dispatchText,
+      projectReplyText: replyText,
+      workDispatchText,
+      workReplyText,
     },
     null,
     2,
   ),
 );
 
-function assertScoutReply(label, rawText) {
+function assertProjectReply(label, rawText) {
   assert.equal(typeof rawText, "string", `${label} hook did not return a text reply`);
   const text = rawText.trim();
   const lines = text.split(/\r?\n/).filter(Boolean);
@@ -91,6 +122,23 @@ function assertScoutReply(label, rawText) {
   assert(
     blocked.every((token) => !text.toLowerCase().includes(token)),
     `${label}: reply still hallucinates placeholder repos: ${text}`,
+  );
+  return text;
+}
+
+function assertWorkReply(label, rawText) {
+  assert.equal(typeof rawText, "string", `${label} hook did not return a text reply`);
+  const text = rawText.trim();
+  const lines = text.split(/\r?\n/).filter(Boolean);
+  assert.equal(lines.length, 4, `${label}: expected 4 bullet lines, got ${lines.length}`);
+  assert(lines.every((line) => line.startsWith("- ")), `${label}: reply must use plain bullets: ${text}`);
+  assert(
+    /openclaw-local-agents/i.test(text),
+    `${label}: expected openclaw-local-agents in work summary: ${text}`,
+  );
+  assert(
+    /(projekt-scout|whatsapp|eval|fallback|reply-pfad|guardrail)/i.test(text),
+    `${label}: expected concrete work markers in work summary: ${text}`,
   );
   return text;
 }
