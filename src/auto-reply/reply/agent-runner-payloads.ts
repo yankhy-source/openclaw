@@ -2,12 +2,12 @@ import { resolveSendableOutboundReplyParts } from "openclaw/plugin-sdk/reply-pay
 import type { MessagingToolSend } from "../../agents/pi-embedded-runner.js";
 import type { ReplyToMode } from "../../config/types.js";
 import { logVerbose } from "../../globals.js";
-import { stripHeartbeatToken } from "../heartbeat.js";
 import type { OriginatingChannelType } from "../templating.js";
 import { SILENT_REPLY_TOKEN } from "../tokens.js";
 import type { ReplyPayload, ReplyThreadingPolicy } from "../types.js";
 import { formatBunFetchSocketError, isBunFetchSocketError } from "./agent-runner-utils.js";
 import { createBlockReplyContentKey, type BlockReplyPipeline } from "./block-reply-pipeline.js";
+import { rewriteHeartbeatOnlyPayloads } from "./heartbeat-fallback.js";
 import {
   resolveOriginAccountId,
   resolveOriginMessageProvider,
@@ -110,29 +110,21 @@ export async function buildReplyPayloads(params: {
   normalizeMediaPaths?: (payload: ReplyPayload) => Promise<ReplyPayload>;
 }): Promise<{ replyPayloads: ReplyPayload[]; didLogHeartbeatStrip: boolean }> {
   let didLogHeartbeatStrip = params.didLogHeartbeatStrip;
-  const sanitizedPayloads = params.isHeartbeat
-    ? params.payloads
-    : params.payloads.flatMap((payload) => {
-        let text = payload.text;
-
-        if (payload.isError && text && isBunFetchSocketError(text)) {
-          text = formatBunFetchSocketError(text);
-        }
-
-        if (!text || !text.includes("HEARTBEAT_OK")) {
-          return [{ ...payload, text }];
-        }
-        const stripped = stripHeartbeatToken(text, { mode: "message" });
-        if (stripped.didStrip && !didLogHeartbeatStrip) {
-          didLogHeartbeatStrip = true;
-          logVerbose("Stripped stray HEARTBEAT_OK token from reply");
-        }
-        const hasMedia = resolveSendableOutboundReplyParts(payload).hasMedia;
-        if (stripped.shouldSkip && !hasMedia) {
-          return [];
-        }
-        return [{ ...payload, text: stripped.text }];
-      });
+  const heartbeatInputPayloads = params.payloads.map((payload) => {
+    let text = payload.text;
+    if (payload.isError && text && isBunFetchSocketError(text)) {
+      text = formatBunFetchSocketError(text);
+    }
+    return { ...payload, text };
+  });
+  const heartbeatRewrite = params.isHeartbeat
+    ? { payloads: heartbeatInputPayloads, didStrip: false }
+    : rewriteHeartbeatOnlyPayloads({ payloads: heartbeatInputPayloads });
+  if (heartbeatRewrite.didStrip && !didLogHeartbeatStrip) {
+    didLogHeartbeatStrip = true;
+    logVerbose("Stripped stray HEARTBEAT_OK token from reply");
+  }
+  const sanitizedPayloads = heartbeatRewrite.payloads;
 
   const replyTaggedPayloads = (
     await Promise.all(

@@ -90,10 +90,11 @@ module.exports = {
 };
 
 function buildProjectScoutReply(params) {
-  if (!shouldTargetMainHumanAgent(params)) {
+  const targetMainHumanAgent = shouldTargetMainHumanAgent(params);
+  const cleanedBody = normalizeText(selectRelevantScoutText(params && params.texts));
+  if (!targetMainHumanAgent) {
     return "";
   }
-  const cleanedBody = normalizeText(selectRelevantScoutText(params && params.texts));
   if (!cleanedBody) {
     return "";
   }
@@ -122,11 +123,18 @@ function buildProjectScoutReply(params) {
 
 function shouldTargetMainHumanAgent(params) {
   const agentId = params && typeof params.agentId === "string" ? params.agentId.trim() : "";
-  if (agentId) {
-    return ["main", "oc-human-main"].includes(agentId);
-  }
   const sessionKey =
     params && typeof params.sessionKey === "string" ? params.sessionKey.trim().toLowerCase() : "";
+  if (agentId) {
+    const normalizedAgentId = agentId.toLowerCase();
+    if (["main", "oc-human-main"].includes(normalizedAgentId)) {
+      return true;
+    }
+    if (!sessionKey) {
+      return false;
+    }
+    return sessionKey.startsWith("agent:main:") || sessionKey.startsWith("agent:oc-human-main:");
+  }
   if (!sessionKey) {
     return true;
   }

@@ -5,13 +5,17 @@ import { resolveFollowupDeliveryPayloads } from "./followup-delivery.js";
 const baseConfig = {} as OpenClawConfig;
 
 describe("resolveFollowupDeliveryPayloads", () => {
-  it("drops heartbeat ack payloads without media", () => {
+  it("replaces heartbeat ack payloads without media with the local fallback", () => {
     expect(
       resolveFollowupDeliveryPayloads({
         cfg: baseConfig,
         payloads: [{ text: "HEARTBEAT_OK" }],
       }),
-    ).toEqual([]);
+    ).toEqual([
+      {
+        text: expect.stringContaining("Ich laufe lokal auf deinem Mac"),
+      },
+    ]);
   });
 
   it("keeps media payloads when stripping heartbeat ack text", () => {

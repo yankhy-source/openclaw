@@ -1,4 +1,5 @@
 import type { ImageContent } from "@mariozechner/pi-ai";
+import { rewriteHeartbeatOnlyPayloads } from "../auto-reply/reply/heartbeat-fallback.js";
 import type { ThinkLevel } from "../auto-reply/thinking.js";
 import type { OpenClawConfig } from "../config/config.js";
 import { formatErrorMessage } from "../infra/errors.js";
@@ -17,10 +18,13 @@ export async function runCliAgent(params: RunCliAgentParams): Promise<EmbeddedPi
     effectiveCliSessionId?: string;
   }): EmbeddedPiRunResult => {
     const text = resultParams.output.text?.trim();
-    const payloads = text ? [{ text }] : undefined;
+    const payloads = rewriteHeartbeatOnlyPayloads({
+      payloads: text ? [{ text }] : [],
+      commandBody: params.prompt,
+    }).payloads;
 
     return {
-      payloads,
+      payloads: payloads.length > 0 ? payloads : undefined,
       meta: {
         durationMs: Date.now() - context.started,
         systemPromptReport: context.systemPromptReport,

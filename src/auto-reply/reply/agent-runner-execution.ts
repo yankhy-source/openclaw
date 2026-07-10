@@ -57,6 +57,7 @@ import {
 } from "../tokens.js";
 import type { GetReplyOptions, ReplyPayload } from "../types.js";
 import { resolveRunAuthProfile } from "./agent-runner-auth-profile.js";
+import { buildProjectScoutFallbackReply } from "./heartbeat-fallback.js";
 import {
   buildEmbeddedRunExecutionParams,
   resolveModelFallbackOptions,
@@ -647,6 +648,10 @@ export async function runAgentTurnWithFallback(params: {
             logVerbose("Stripped stray HEARTBEAT_OK token from reply");
           }
           if (stripped.shouldSkip && !reply.hasMedia) {
+            const fallbackText = buildProjectScoutFallbackReply(params.commandBody);
+            if (fallbackText) {
+              return { text: fallbackText, skip: false };
+            }
             return { skip: true };
           }
           text = stripped.text;

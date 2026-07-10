@@ -104,6 +104,15 @@ const statusReplyResult = await beforeAgentReplyHandler(
     sessionKey: "agent:main:whatsapp:direct:+4917623606147",
   },
 );
+const statusReplyFallbackAgentResult = await beforeAgentReplyHandler(
+  {
+    cleanedBody: statusPrompt,
+  },
+  {
+    agentId: "Safi Commander",
+    sessionKey: "agent:main:main",
+  },
+);
 
 const dispatchText = assertProjectReply("before_dispatch(project)", projectDispatchResult?.text);
 const replyText = assertProjectReply("before_agent_reply(project)", projectReplyResult?.reply?.text);
@@ -116,6 +125,15 @@ assert.equal(workReplyText, workDispatchText, "before_dispatch and before_agent_
 const statusDispatchText = assertStatusReply("before_dispatch(status)", statusDispatchResult?.text);
 const statusReplyText = assertStatusReply("before_agent_reply(status)", statusReplyResult?.reply?.text);
 assert.equal(statusReplyText, statusDispatchText, "before_dispatch and before_agent_reply should agree for status prompts");
+const statusReplyFallbackAgentText = assertStatusReply(
+  "before_agent_reply(status,fallback-agent-id)",
+  statusReplyFallbackAgentResult?.reply?.text,
+);
+assert.equal(
+  statusReplyFallbackAgentText,
+  statusDispatchText,
+  "before_agent_reply should still match main session keys when agentId drifts",
+);
 
 console.log(
   JSON.stringify(
@@ -128,6 +146,7 @@ console.log(
       workReplyText,
       statusDispatchText,
       statusReplyText,
+      statusReplyFallbackAgentText,
     },
     null,
     2,

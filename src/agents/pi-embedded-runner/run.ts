@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import fs from "node:fs/promises";
+import { rewriteHeartbeatOnlyPayloads } from "../../auto-reply/reply/heartbeat-fallback.js";
 import type { ThinkLevel } from "../../auto-reply/thinking.js";
 import {
   ensureContextEnginesInitialized,
@@ -244,6 +245,26 @@ export async function runEmbeddedPiAgent(
         trigger: params.trigger,
         channelId: params.messageChannel ?? params.messageProvider ?? undefined,
       };
+
+      if (hookRunner?.runBeforeAgentReply) {
+        try {
+          const hookResult = await hookRunner.runBeforeAgentReply(
+            { cleanedBody: params.prompt },
+            hookCtx,
+          );
+          if (hookResult?.handled) {
+            return {
+              payloads: hookResult.reply ? [hookResult.reply] : undefined,
+              meta: {
+                durationMs: Date.now() - started,
+                aborted: false,
+              },
+            };
+          }
+        } catch (hookErr) {
+          log.warn(`before_agent_reply hook failed: ${String(hookErr)}`);
+        }
+      }
 
       const hookSelection = await resolveHookModelSelection({
         prompt: params.prompt,
@@ -1401,24 +1422,27 @@ export async function runEmbeddedPiAgent(
             compactionCount: autoCompactionCount > 0 ? autoCompactionCount : undefined,
           };
 
-          const payloads = buildEmbeddedRunPayloads({
-            assistantTexts: attempt.assistantTexts,
-            toolMetas: attempt.toolMetas,
-            lastAssistant: attempt.lastAssistant,
-            lastToolError: attempt.lastToolError,
-            config: params.config,
-            isCronTrigger: params.trigger === "cron",
-            sessionKey: params.sessionKey ?? params.sessionId,
-            provider: activeErrorContext.provider,
-            model: activeErrorContext.model,
-            verboseLevel: params.verboseLevel,
-            reasoningLevel: params.reasoningLevel,
-            toolResultFormat: resolvedToolResultFormat,
-            suppressToolErrorWarnings: params.suppressToolErrorWarnings,
-            inlineToolResultsAllowed: false,
-            didSendViaMessagingTool: attempt.didSendViaMessagingTool,
-            didSendDeterministicApprovalPrompt: attempt.didSendDeterministicApprovalPrompt,
-          });
+          const payloads = rewriteHeartbeatOnlyPayloads({
+            payloads: buildEmbeddedRunPayloads({
+              assistantTexts: attempt.assistantTexts,
+              toolMetas: attempt.toolMetas,
+              lastAssistant: attempt.lastAssistant,
+              lastToolError: attempt.lastToolError,
+              config: params.config,
+              isCronTrigger: params.trigger === "cron",
+              sessionKey: params.sessionKey ?? params.sessionId,
+              provider: activeErrorContext.provider,
+              model: activeErrorContext.model,
+              verboseLevel: params.verboseLevel,
+              reasoningLevel: params.reasoningLevel,
+              toolResultFormat: resolvedToolResultFormat,
+              suppressToolErrorWarnings: params.suppressToolErrorWarnings,
+              inlineToolResultsAllowed: false,
+              didSendViaMessagingTool: attempt.didSendViaMessagingTool,
+              didSendDeterministicApprovalPrompt: attempt.didSendDeterministicApprovalPrompt,
+            }),
+            commandBody: params.prompt,
+          }).payloads;
 
           // Timeout aborts can leave the run without any assistant payloads.
           // Emit an explicit timeout error instead of silently completing, so
